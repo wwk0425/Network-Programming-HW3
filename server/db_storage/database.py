@@ -6,10 +6,12 @@ import time
 # 檔案路徑
 USER_DB_FILE = "server_data/users.json"
 GAME_DB_FILE = "server_data/games.json"
+ROOM_DB_FILE = "server_data/rooms.json"
 
 # 鎖 (分別鎖定，提升效能)
 user_lock = threading.Lock()
 game_lock = threading.Lock()
+room_lock = threading.Lock()
 
 # --- 初始化 ---
 def init_db():
@@ -24,6 +26,8 @@ def init_db():
         with open(GAME_DB_FILE, 'w', encoding='utf-8') as f:
             json.dump({}, f) # 一開始是空的字典
 
+    with open(ROOM_DB_FILE, 'w', encoding='utf-8') as f:
+        json.dump({}, f)
 # --- 遊戲相關功能 ---
 
 def get_all_games():
@@ -142,3 +146,105 @@ def verify_login(username, password, role="player"):
         if username in data[group] and data[group][username] == password:
             return True
         return False
+    
+def create_room_in_db(room_id, game_id, host_name, max_players):
+    with room_lock:
+        with open(ROOM_DB_FILE, 'r') as f:
+            rooms = json.load(f)
+        
+        rooms[str(room_id)] = {
+            "id": room_id,
+            "game_id": game_id,
+            "host": host_name,
+            "status": "Waiting",
+            "max_players": max_players,
+            "players": [host_name] # 只存名字 (String)，不存 Socket
+        }
+        
+        with open(ROOM_DB_FILE, 'w') as f:
+            json.dump(rooms, f, indent=4)
+
+def get_room_info(room_id):
+    with room_lock:
+        with open(ROOM_DB_FILE, 'r') as f:
+            rooms = json.load(f)
+        return rooms.get(str(room_id))
+
+def get_all_rooms():
+    with room_lock:
+        with open(ROOM_DB_FILE, 'r') as f:
+            return json.load(f)
+
+def join_room_in_db(room_id, player_name):
+    """
+    回傳: (Success: bool, Message: str)
+    """
+    with room_lock:
+        with open(ROOM_DB_FILE, 'r') as f:
+            rooms = json.load(f)
+        
+        rid = str(room_id)
+        if rid not in rooms:
+            return False, "Room not found"
+        
+        room = rooms[rid]
+        if len(room['players']) >= room['max_players']:
+            return False, "Room is full"
+        if room['status'] != "Waiting":
+            return False, "Game already started"
+        if player_name in room['players']:
+            return False, "Already in room"
+
+        # 加入玩家
+        room['players'].append(player_name)
+        
+        with open(ROOM_DB_FILE, 'w') as f:
+            json.dump(rooms, f, indent=4)
+            
+        return True, "Joined successfully"
+    
+def update_room_status(room_id, status, game_port=None):
+    with room_lock:
+        with open(ROOM_DB_FILE, 'r') as f:
+            rooms = json.load(f)
+        
+        rid = str(room_id)
+        if rid in rooms:
+            rooms[rid]['status'] = status
+            if game_port:
+                rooms[rid]['port'] = game_port
+            
+            with open(ROOM_DB_FILE, 'w') as f:
+                json.dump(rooms, f, indent=4)
+
+def remove_player_from_room(room_id, player_name):
+    """
+    玩家離開或斷線。如果房主離開，回傳 'room_closed'，否則回傳 'player_left'
+    """
+    with room_lock:
+        with open(ROOM_DB_FILE, 'r') as f:
+            rooms = json.load(f)
+        
+        rid = str(room_id)
+        if rid not in rooms:
+            return "not_found"
+            
+        room = rooms[rid]
+        
+        if player_name in room['players']:
+            room['players'].remove(player_name)
+        
+        result = "player_left"
+        
+        # 檢查: 如果沒人了，或房主離開 -> 刪除房間
+        if not room['players'] or room['host'] == player_name:
+            del rooms[rid]
+            result = "room_closed"
+        else:
+            # 寫回更新後的房間資料
+             pass # Python 的 dict 是 reference，只要最後 dump rooms 即可
+             
+        with open(ROOM_DB_FILE, 'w') as f:
+            json.dump(rooms, f, indent=4)
+            
+        return result
