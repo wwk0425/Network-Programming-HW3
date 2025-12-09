@@ -6,7 +6,7 @@ import threading
 
 # 引用我們之前定義好的工具
 from utils import recv_json, send_json, recv_file
-from db_storage.database import verify_login, add_or_update_game, get_all_games
+from db_storage.database import register_user, verify_login, add_or_update_game, get_all_games
 
 # 設定遊戲儲存根目錄
 GAMES_ROOT_DIR = "games"
@@ -31,8 +31,18 @@ def handle_dev_client(conn, addr):
 
             # --- 指令處理 ---
 
-            # === 1. 登入處理 ===
-            if cmd == 'login':
+            # === 1. 註冊登入處理 ===
+            if cmd == 'register':
+                username = req.get('username')
+                password = req.get('password')
+                
+                # 呼叫 database.py 的註冊函式
+                if register_user(username, password, role="developer"):
+                    send_json(conn, {"status": "ok", "msg": "Registration successful"})
+                else:
+                    send_json(conn, {"status": "error", "msg": "Username already exists"})
+            
+            elif cmd == 'login':
                 username = req.get('username')
                 password = req.get('password')
                 
