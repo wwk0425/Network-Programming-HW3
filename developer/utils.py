@@ -145,7 +145,7 @@ def validate_game_folder(folder_path):
     return True
 
 
-def zip_game_folder(folder_path, output_zip_name="temp_game.zip", username = "developer"):
+def zip_game_folder(folder_path, output_zip_name="temp_game.zip", username = "developer", update = False):
     """
     將指定資料夾的內容壓縮成 zip 檔
     回傳: 壓縮後的 zip 檔案路徑，如果失敗則回傳 None
@@ -154,9 +154,12 @@ def zip_game_folder(folder_path, output_zip_name="temp_game.zip", username = "de
     if not os.path.exists(folder_path):
         print(f"[Error] Folder '{folder_path}' does not exist.")
         return None
-    
-    if not manifest_initial_setting(folder_path, username):
-        return None
+    if update:
+        if not manifest_update_setting(folder_path, username):
+            return None
+    else:    
+        if not manifest_initial_setting(folder_path, username):
+            return None
 
     # 2. 檢查是否有 manifest.json (關鍵步驟！)
     if not validate_game_folder(folder_path):
@@ -209,12 +212,6 @@ def manifest_initial_setting(folder_path, username="developer"):
         else:
             print("[Warning] 未輸入遊戲 ID，將使用預設值。")
         
-        version = input("請輸入遊戲版本 (預設 1.0.0): ").strip()
-        if version:
-            template['version'] = version
-        else:
-            print("[Info] 使用預設版本 1.0.0。")
-        
         min_players = input("請輸入最少玩家數 (預設 1): ").strip()
         if min_players.isdigit():
             template['min_players'] = int(min_players)
@@ -266,6 +263,119 @@ def manifest_initial_setting(folder_path, username="developer"):
             print(f"{key}: {value}")
 
         confirm = input("是否要重新填寫遊戲簡介? (y/n): ").strip().lower()
+        if confirm != 'y':
+            manifest_path = os.path.join(folder_path, "manifest.json")
+            with open(manifest_path, 'w', encoding='utf-8') as f:
+                json.dump(template, f, indent=4, ensure_ascii=False)
+            
+            break
+    return template
+
+def is_valid_version_format(version):
+    """
+    檢查版本號格式是否正確 (x.y.z)
+    """
+    parts = version.split('.')
+    if len(parts) != 3:
+        return False
+    for part in parts:
+        if not part.isdigit():
+            return False
+    return True
+
+def compare_versions(v1, v2):
+    """
+    比較兩個版本號字串 (格式: x.y.z)
+    回傳:
+        1 if v1 > v2
+        -1 if v1 < v2
+        0 if v1 == v2
+    """
+    nums1 = [int(x) for x in v1.split('.')]
+    nums2 = [int(x) for x in v2.split('.')]
+    for a, b in zip(nums1, nums2):
+        if a > b:
+            return v1
+        elif a < b:
+            return v2
+    return v2  # 相同則回傳 v2
+
+def manifest_update_setting(folder_path, username="developer"):
+    """
+    回傳一個基本的 manifest.json 範本內容 (Dict)
+    """
+    while True:
+        print("\n" + "="*10 + " 更新遊戲內容填寫 " + "="*10)
+        with open(os.path.join(folder_path, "manifest.json"), 'r', encoding='utf-8') as f:
+            template = json.load(f)
+
+        while True:
+            version = input("請輸入更新遊戲版本 (範本格式 1.0.0): ").strip()
+            #先確認格式是否正確
+            if version == "" or not is_valid_version_format(version):
+                print("[Warning] 未輸入版本號或格式錯誤，請使用範本格式 1.0.0。")
+                continue
+            #確認版本號不能用舊的
+            if compare_versions(version, template.get('version', '0.0.0')) == template.get('version', '0.0.0'):
+                print("[Warning] 版本號不能比現有版本舊或相同，請重新輸入。")
+                continue
+            else:
+                break
+
+        if version:
+            template['version'] = version
+        
+        min_players = input("請輸入更新後最少玩家數 (預設 1): ").strip()
+        if min_players.isdigit():
+            template['min_players'] = int(min_players)
+        else:
+            print("[Info] 偵測填入非數字或是空值，使用預設最少玩家數 1。")
+
+        max_players = input("請輸入更新後最多玩家數 (預設 4): ").strip()
+        if max_players.isdigit():
+            template['max_players'] = int(max_players)
+        else:
+            print("[Info] 偵測填入非數字或是空值，使用預設最多玩家數 4。")
+
+        server_path = os.path.join(folder_path, "server")
+        client_path = os.path.join(folder_path, "client")
+
+        if os.listdir(server_path) == []:
+            print("[Info] 'server' 目錄目前是空的，請先放入要上傳的遊戲伺服器。")
+            return
+        
+        for idx , name in enumerate(os.listdir(server_path)):
+            print(f"  {idx+1}. {name}")
+        
+        server_choice = input("請輸入要上傳的新 Server 執行檔(1~5): ").strip()
+        selected_server = os.listdir(server_path)[int(server_choice)-1]
+        template['server_exe'] = f"server/{selected_server}"
+
+        if os.listdir(client_path) == []:
+            print("[Info] 'client' 目錄目前是空的，請先放入要上傳的遊戲客戶端。")
+            return
+        
+        for idx , name in enumerate(os.listdir(client_path)):
+            print(f"  {idx+1}. {name}")
+        
+        client_choice = input("請輸入要上傳的新 Client 執行檔(1~5): ").strip()
+        selected_client = os.listdir(client_path)[int(client_choice)-1]
+        template['client_exe'] = f"client/{selected_client}"
+
+        description = input("請輸入更新內容描述: ").strip()
+        if description:
+            template['update_patch'] = description
+        else:
+            print("[Info] 使用預設遊戲描述。")
+
+        template['author'] = username
+
+        #重新輸出遊戲簡介確認是否要重新填寫
+        print("\n=== 遊戲簡介確認 ===")
+        for key, value in template.items():
+            print(f"{key}: {value}")
+
+        confirm = input("是否要重新填寫更新遊戲簡介? (y/n): ").strip().lower()
         if confirm != 'y':
             manifest_path = os.path.join(folder_path, "manifest.json")
             with open(manifest_path, 'w', encoding='utf-8') as f:
