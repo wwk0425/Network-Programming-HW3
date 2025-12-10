@@ -1,5 +1,6 @@
 import threading
 import socket
+import os
 from config import LOBBY_PORT, DEV_PORT
 from services.lobby_service import handle_lobby_client
 from services.dev_service import handle_dev_client
@@ -25,6 +26,8 @@ if __name__ == "__main__":
     print("=== Game Platform Server Starting ===")
     init_db()  # 初始化資料庫
     
+    if not os.path.exists("games"):
+        os.makedirs("games")
     # 啟動 Lobby Server (玩家用)
     t_lobby = threading.Thread(
         target=start_service, 
