@@ -6,7 +6,7 @@ import threading
 
 # 引用我們之前定義好的工具
 from utils import recv_json, send_json, recv_file
-from db_storage.database import register_user, verify_login, add_or_update_game, get_all_games
+from db_storage.database import register_user, verify_login, add_or_update_game, get_all_games, remove_game
 
 # 設定遊戲儲存根目錄
 GAMES_ROOT_DIR = "games"
@@ -72,8 +72,14 @@ def handle_dev_client(conn, addr):
                     if g.get('uploader') == current_user
                 ]
                 send_json(conn, {"status": "ok", "games": my_games})
-
-            # === 5. 未知指令 ===
+            # === 5. 下架遊戲 ===
+            elif cmd == 'delete_game':
+                game_id = req.get('game_id')
+                if game_id:
+                    delete_game_process(conn, current_user, game_id)
+                else:
+                    send_json(conn, {"status": "error", "msg": "Missing game_id"})
+            # === 6. 未知指令 ===
             else:
                 send_json(conn, {"status": "error", "msg": "Unknown command"})
 
@@ -173,3 +179,23 @@ def handle_upload_process(conn, uploader_name):
             os.remove(temp_zip)
         if os.path.exists(temp_extract_folder):
             shutil.rmtree(temp_extract_folder)
+
+def delete_game_process(conn, uploader_name, game_id):
+    """
+    處理遊戲下架的邏輯
+    """
+    #先判斷有沒有房間
+    # if True:  # TODO: 檢查是否有玩家正在遊玩該遊戲
+    #     pass
+    #若沒有就直接下架遊戲
+    try:
+        # 呼叫 database.py 的刪除函式
+        if remove_game(game_id, uploader_name):
+            send_json(conn, {"status": "ok", "msg": f"Game '{game_id}' removed successfully."})
+        else:
+            send_json(conn, {"status": "error", "msg": "Game not found or you do not have permission to remove it."})
+
+    except Exception as e:
+        error_msg = str(e)
+        print(f"[Delete Error] {error_msg}")
+        send_json(conn, {"status": "error", "msg": error_msg})
