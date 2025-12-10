@@ -3,7 +3,7 @@ import socket
 from config import LOBBY_PORT, DEV_PORT
 from services.lobby_service import handle_lobby_client
 from services.dev_service import handle_dev_client
-
+from db_storage.database import init_db
 def start_service(port, handler_func, service_name):
     """
     通用的 Server 啟動函式
@@ -23,6 +23,7 @@ def start_service(port, handler_func, service_name):
 
 if __name__ == "__main__":
     print("=== Game Platform Server Starting ===")
+    init_db()  # 初始化資料庫
     
     # 啟動 Lobby Server (玩家用)
     t_lobby = threading.Thread(
