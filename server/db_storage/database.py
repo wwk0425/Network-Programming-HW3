@@ -58,7 +58,6 @@ def add_or_update_game(game_id, manifest_data, relative_path, uploader_name):
         # 更新欄位 (版本、路徑可能變了)
         games[game_id] = {
             "game_id": game_id,
-            "name": manifest_data.get("name", game_id),
             "version": manifest_data.get("version", "1.0"),
             "description": manifest_data.get("description", ""),
             "min_players": manifest_data.get("min_players", 1),
