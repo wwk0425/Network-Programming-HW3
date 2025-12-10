@@ -9,6 +9,7 @@ import json
 # 如果放在同層，直接 from network import ...
 from utils import send_json, recv_json, send_file, zip_game_folder
 from config import DEV_PORT
+from template.create_game_template import create_game_template
 
 # --- 設定 ---
 SERVER_IP = '127.0.0.1'
@@ -74,15 +75,27 @@ def upload_game_workflow(sock, username):
     Use Case D1: 上架新遊戲
     """
     print("\n=== 上架新遊戲 ===")
-    print("請輸入您的遊戲專案資料夾路徑 (例如: ./my_games/snake)")
-    folder_path = input("路徑: ").strip()
-
-    if not os.path.exists(folder_path):
-        print("[Error] 路徑不存在。")
+    if "games" not in os.listdir('.'):
+        print("[Info] 請先使用創建上傳目錄指令創建 'games' 目錄，並創建好要上傳的遊戲的目錄。")
         return
+    
+    games_path = os.path.join('.', 'games')
 
+    if os.listdir(games_path) == []:
+        print("[Info] 'games' 目錄目前是空的，請先放入要上傳的遊戲資料夾。")
+        return
+    
+    
+    print(f"[Info] 目前可上傳的遊戲專案資料夾有:")
+    for idx, game in enumerate(os.listdir(games_path)):
+        print(f"  {idx+1}. {game}")
+
+    choice = input("請輸入您想上傳的遊戲:(1~5)").strip()
+
+    selected_game = os.listdir(games_path)[int(choice)-1]
+    game_folder_path = os.path.join(games_path, selected_game)
     # 1. 本地檢查與壓縮
-    zip_path = zip_game_folder(folder_path)
+    zip_path = zip_game_folder(game_folder_path, username=username)
     if not zip_path:
         return # 檢查失敗，中止
 
@@ -126,10 +139,10 @@ def list_my_games(sock):
     if res and res['status'] == 'ok':
         games = res['games']
         print(f"\n=== 我的遊戲列表 ({len(games)}) ===")
-        print(f"{'ID':<15} {'名稱':<20} {'版本':<10} {'評分'}")
+        print(f"{'名稱':<20} {'版本':<10} {'評分'}")
         print("-" * 60)
         for g in games:
-            print(f"{g['game_id']:<15} {g['name']:<20} {g['version']:<10} {g.get('average_rating', 0)}")
+            print(f"{g['game_id']:<20} {g['version']:<10} {g.get('average_rating', 0)}")
     else:
         print("無法取得列表。")
 
@@ -177,15 +190,20 @@ def main():
         print("\n" + "="*10 + " Developer Menu " + "="*10)
         print("1. 上架新遊戲 (Upload Game)")
         print("2. 列出我的遊戲 (List My Games)")
-        print("3. 登出/離開 (Exit)")
+        print("3. 創建遊戲模板 (Create Game Template)")
+        print("4. 登出/離開 (Exit)")
         
-        choice = input("請選擇功能 (1-3): ").strip()
+        choice = input("請選擇功能 (1-4): ").strip()
 
         if choice == '1':
             upload_game_workflow(sock, current_user)
         elif choice == '2':
             list_my_games(sock)
         elif choice == '3':
+            print("\n" + "="*7 + " Developer Menu " + "="*7)
+            template_name = input("請輸入遊戲名稱: ").strip()
+            create_game_template(template_name)
+        elif choice == '4':
             print("Bye!")
             break
         else:
