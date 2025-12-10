@@ -63,6 +63,43 @@ def recvall(sock, n):
             return None
     return data
 
+
+def send_file(sock, filepath):
+    """
+    流程：
+    1. 檢查檔案是否存在
+    2. 發送 JSON Header (包含檔名與大小)
+    3. 發送檔案內容 (Binary)
+    """
+    if not os.path.exists(filepath):
+        # 告訴 Client 檔案找不到
+        error_msg = {"status": "error", "msg": "File not found"}
+        send_json(sock, error_msg)
+        return
+
+    filesize = os.path.getsize(filepath)
+    filename = os.path.basename(filepath)
+
+    # 1. 先傳 Header
+    header = {
+        "status": "ok",
+        "cmd": "file_download_header",
+        "filename": filename,
+        "size": filesize
+    }
+    send_json(sock, header)
+
+    # 2. 再傳檔案內容 (分塊讀取，避免記憶體爆炸)
+    with open(filepath, 'rb') as f:
+        while True:
+            # 每次讀 4096 bytes 傳送
+            chunk = f.read(4096)
+            if not chunk:
+                break
+            sock.sendall(chunk)
+    
+    print(f"[System] Sent file: {filename} ({filesize} bytes)")
+    
 def validate_game_folder(folder_path):
     print(f"[Check] 正在檢查遊戲資料夾: {folder_path} ...")
 
