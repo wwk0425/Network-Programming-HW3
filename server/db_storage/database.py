@@ -2,6 +2,7 @@ import json
 import threading
 import os
 import time
+import shutil
 
 # 檔案路徑
 USER_DB_FILE = "server_data/users.json"
@@ -64,7 +65,8 @@ def add_or_update_game(game_id, manifest_data, relative_path, uploader_name):
             "max_players": manifest_data.get("max_players", 4),
             "server_exe": manifest_data.get("server_exe"), # 重要：啟動時需要
             "client_exe": manifest_data.get("client_exe"), # 重要：下載時需要
-            
+            "update_patch": manifest_data.get("update_patch", ""),
+
             # 系統維護欄位
             "uploader": uploader_name,
             "path": relative_path, # 存例如: games/snake/1.0
@@ -247,3 +249,45 @@ def remove_player_from_room(room_id, player_name):
             json.dump(rooms, f, indent=4)
             
         return result
+    
+def remove_game(game_id, uploader_name):
+    """
+    刪除遊戲資料與檔案
+    回傳: True (成功), False (失敗)
+    """
+    with game_lock:
+        with open(GAME_DB_FILE, 'r', encoding='utf-8') as f:
+            games = json.load(f)
+        
+        if game_id not in games:
+            return False
+        
+        game = games[game_id]
+        
+        # 確認是上傳者在刪除
+        if game['uploader'] != uploader_name:
+            return False
+        
+        # 刪除遊戲檔案
+        if not os.path.exists(game['path']):
+            print(f"[Warning] Game path '{game_id}' does not exist.")
+            return False
+        
+        version_path = game['path']
+        parts = version_path.split("\\")
+        game_path = "\\".join(parts[:2])  # 遊戲主目錄
+        
+        if os.path.exists(game_path):
+            shutil.rmtree(game_path)
+        else:
+            print(f"[Warning] Game directory '{game_id}' does not exist.")
+            return False
+        
+        # 刪除資料庫中的遊戲記錄
+        del games[game_id]
+        
+        with open(GAME_DB_FILE, 'w', encoding='utf-8') as f:
+            json.dump(games, f, indent=4, ensure_ascii=False)
+        
+        print(f"[DB] Game '{game_id}' removed from database.")
+        return True
