@@ -87,15 +87,30 @@ def upload_game_workflow(sock, username):
     
     
     print(f"[Info] 目前可上傳的遊戲專案資料夾有:")
+    dir_length = len(os.listdir(games_path))
     for idx, game in enumerate(os.listdir(games_path)):
         print(f"  {idx+1}. {game}")
 
-    choice = input("請輸入您想上傳的遊戲:(1~5)").strip()
-
+    choice = input(f"請輸入您想上傳的遊戲:(1~{dir_length})").strip()
+    if not (choice.isdigit() and 1 <= int(choice) <= dir_length):
+        print("[Error] 輸入超出範圍，請重新操作。")
+        return
+    
     selected_game = os.listdir(games_path)[int(choice)-1]
+
+    #如果遊戲已經上傳過 提示去更新他
+    send_json(sock, {"cmd": "my_games"})
+    res = recv_json(sock)
+    if res and res['status'] == 'ok':
+        my_games = res['games']
+        for g in my_games:
+            if g['game_id'] == selected_game:
+                print(f"[Info] 您已經上傳過此遊戲 '{selected_game}'，請使用更新遊戲內容功能來更新它。")
+                return
+
     game_folder_path = os.path.join(games_path, selected_game)
     # 1. 本地檢查與壓縮
-    zip_path = zip_game_folder(game_folder_path, username=username)
+    zip_path = zip_game_folder(game_folder_path, username=username, update=False)
     if not zip_path:
         return # 檢查失敗，中止
 
@@ -130,6 +145,83 @@ def upload_game_workflow(sock, username):
         if os.path.exists(zip_path):
             os.remove(zip_path)
 
+def update_game_workflow(sock, username):
+    """
+    Use Case D2: 更新已上架遊戲
+    """
+    print("\n=== 上架新遊戲 ===")
+    if "games" not in os.listdir('.'):
+        print("[Info] 請先使用創建上傳目錄指令創建 'games' 目錄，並創建好要上傳的遊戲的目錄。")
+        return
+    
+    games_path = os.path.join('.', 'games')
+
+    if os.listdir(games_path) == []:
+        print("[Info] 'games' 目錄目前是空的，請確認已放入要更新的遊戲資料夾。")
+        return
+    
+    send_json(sock, {"cmd": "my_games"})
+    res = recv_json(sock)
+    if res and res['status'] == 'ok':
+        my_games = res['games']
+            
+    print(f"[Info] 目前可更新的遊戲專案有:")
+
+    ##做了確認是否輸入在範圍內
+    list_game_length = len(my_games)
+
+    while True:
+        for idx, game in enumerate(my_games):
+            print(f"  {idx+1}. {game.get('game_id', 'Unknown')}")
+        choice = input(f"請輸入您想更新的遊戲:(1~{list_game_length})").strip()
+        if 1 <= int(choice) <= list_game_length:
+            break
+        else:
+            print("[Error] 輸入超出範圍，請重新操作。")
+
+    #檢查要更新的遊戲有沒有目錄
+    selected_game = my_games[int(choice)-1].get('game_id')
+    if selected_game not in os.listdir(games_path):
+        print(f"[Info] 'games' 目錄中沒有找到遊戲 '{selected_game}' 的資料夾，請確認已放入要更新的遊戲資料夾。")
+        return
+    game_folder_path = os.path.join(games_path, selected_game)
+
+    # 1. 本地檢查與壓縮
+    zip_path = zip_game_folder(game_folder_path, username=username, update=True)
+    if not zip_path:
+        return # 檢查失敗，中止
+
+    try:
+        # 2. 發送上傳請求
+        print("[Upload] 正在請求上傳...")
+        send_json(sock, {"cmd": "upload_game"})
+
+        # 3. 等待 Server 說 "Ready" (Handshake)
+        # 這對應我們在 dev_service 寫的邏輯
+        res = recv_json(sock)
+        if not res or res.get('status') != 'ready_to_receive':
+            print(f"[Error] Server 拒絕上傳: {res.get('msg')}，請重新嘗試更新")
+            return
+
+        # 4. 開始傳檔
+        print("[Upload] 開始傳輸檔案...")
+        send_file(sock, zip_path)
+
+        # 5. 等待最終確認
+        final_res = recv_json(sock)
+        if final_res and final_res['status'] == 'ok':
+            print(f"\n>>> {final_res['msg']} <<<")
+            print("(您現在可以在 '我的遊戲' 列表中看到新版本號了)")
+        else:
+            print(f"[Error] 更新失敗: {final_res.get('msg')}，請重新嘗試更新")
+
+    except Exception as e:
+        print(f"[Error]連線異常: {e}，請重新嘗試更新")
+    finally:
+        # 清除暫存檔
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+            
 def list_my_games(sock):
     """
     列出該開發者擁有的遊戲 (Optional but useful)
@@ -146,6 +238,51 @@ def list_my_games(sock):
     else:
         print("無法取得列表。")
 
+def delete_game_workflow(sock, username):
+    """
+    Use Case D3: 下架遊戲內容
+    """
+    while True:
+        print("\n=== 下架遊戲內容 ===")
+        send_json(sock, {"cmd": "my_games"})
+        res = recv_json(sock)
+        if res and res['status'] == 'ok':
+            my_games = res['games']
+                
+        print(f"[Info] 目前可下架的遊戲專案有:")
+
+        ##做了確認是否輸入在範圍內
+        list_game_length = len(my_games)
+
+        while True:
+            for idx, game in enumerate(my_games):
+                print(f"  {idx+1}. {game.get('game_id', 'Unknown')}")
+            choice = input(f"請輸入您想下架的遊戲:(1~{list_game_length})").strip()
+            if choice == '':
+                print("[Error] 輸入不可為空，請重新操作。")
+                continue
+            if 1 <= int(choice) <= list_game_length:
+                break
+            else:
+                print("[Error] 輸入超出範圍，請重新操作。")
+        print(f"[Info] 您是否確定選擇下架遊戲 '{my_games[int(choice)-1].get('game_id')}'，此操作無法復原！")
+        confirm = input("請輸入 Y 確認下架，或其他鍵取消: ").strip()
+        if confirm.lower() != 'y':
+            print("下架操作已取消。")
+            return
+        else:
+            break
+        
+
+    selected_game = my_games[int(choice)-1].get('game_id')
+
+    # 發送下架請求
+    send_json(sock, {"cmd": "delete_game", "game_id": selected_game})
+    res = recv_json(sock)
+    if res and res['status'] == 'ok':
+        print(f"[Info] 遊戲 '{selected_game}' 已成功下架。")
+    else:
+        print(f"[Error] 無法下架遊戲: {res.get('msg', 'Unknown error')}，請重新嘗試下架")
 # --- 主程式 (選單迴圈) ---
 
 def main():
@@ -191,9 +328,11 @@ def main():
         print("1. 上架新遊戲 (Upload Game)")
         print("2. 列出我的遊戲 (List My Games)")
         print("3. 創建遊戲模板 (Create Game Template)")
-        print("4. 登出/離開 (Exit)")
+        print("4. 更新遊戲內容 (Update Game Content)")
+        print("5. 下架遊戲內容 (Remove Game)")
+        print("6. 登出/離開 (Exit)")
         
-        choice = input("請選擇功能 (1-4): ").strip()
+        choice = input("請選擇功能 (1-6): ").strip()
 
         if choice == '1':
             upload_game_workflow(sock, current_user)
@@ -204,6 +343,10 @@ def main():
             template_name = input("請輸入遊戲名稱: ").strip()
             create_game_template(template_name)
         elif choice == '4':
+            update_game_workflow(sock, current_user)
+        elif choice == '5':
+            delete_game_workflow(sock, current_user)
+        elif choice == '6':
             print("Bye!")
             break
         else:
