@@ -137,10 +137,11 @@ def handle_upload_process(conn, uploader_name):
         
         if not game_id or not version:
             raise Exception("Invalid manifest: missing game_id or version")
-
+        game_path = f"{game_id}-{uploader_name}"
+        
         # 5. 部署到最終目錄: games/{game_id}/{version}/
         # 使用 os.path.join 確保跨平台相容
-        final_dir = os.path.join(GAMES_ROOT_DIR, game_id, version)
+        final_dir = os.path.join(GAMES_ROOT_DIR, game_path, version)
 
         # 如果該版本已存在，先刪除舊的 (Overwrite)
         if os.path.exists(final_dir):
