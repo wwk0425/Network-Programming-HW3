@@ -861,15 +861,18 @@ def review_game(sock):
     else:
         print("列表載入失敗。")
         return
+    
     while True:
         choice = input(f"請輸入要評論的遊戲編號(1~{len(games)}) (或輸入 q 返回): ").strip()
         if choice.lower() == 'q' or (choice.isdigit() and 1 <= int(choice) <= len(games)):
             break
         else:
             print("無效的輸入，請重新輸入。")
+
     if choice.lower() == 'q':
         return
     game_id = games[int(choice)-1]['game_id']
+    
     while True:
         rating = input("請給予遊戲評分 (1-5): ").strip()
         if rating.isdigit() and 1 <= int(rating) <= 5:
@@ -901,18 +904,35 @@ def review_game(sock):
             continue
         comment = comment_new
         break
-    #送出評論
-    send_json(sock, {
-        "cmd": "submit_review",
-        "game_id": game_id,
-        "rating": rating,
-        "comment": comment
-    })
-    res = recv_json(sock)
-    if res and res['status'] == 'ok':
-        print("評論已送出，謝謝您的回饋！")
-    else:
-        print("評論送出失敗。")
+    while True:
+        try:
+            #送出評論
+            send_json(sock, {
+                "cmd": "submit_review",
+                "game_id": game_id,
+                "rating": rating,
+                "comment": comment
+            })
+            res = recv_json(sock)
+            if res and res['status'] == 'ok':
+                print("評論已送出，謝謝您的回饋！")
+                break
+            else:
+                print("評論送出失敗。")
+                choice = input("是否重試? (y/n): ")
+                if choice.lower() != 'y':
+                    return
+                else:
+                    continue
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+            raise
+        except Exception as e:
+            print(f"[Error] 無法送出評論: {e}")
+            choice = input("是否重試? (y/n): ")
+            if choice.lower() != 'y':
+                return
+            else:
+                continue
 
 def main():
     

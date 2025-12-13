@@ -7,7 +7,7 @@ import json
 
 # 引用工具與資料庫
 from utils import recv_json, send_json, zip_game_folder_to_player, send_file, compare_versions_player
-from db_storage.database import verify_login, register_user, get_all_games, create_room_in_db, get_all_rooms, join_room_in_db, update_room_status, remove_player_from_room, get_room_info, add_player_ready, remove_player_ready, record_player_game_record, get_player_game_records, add_review
+from db_storage.database import verify_login, register_user, get_all_games, create_room_in_db, get_all_rooms, join_room_in_db, update_room_status, remove_player_from_room, get_room_info, add_player_ready, remove_player_ready, record_player_game_record, get_player_game_records, add_review, player_exit
 from config import LOBBY_PORT
 # --- 全域變數 ---
 online_users = {} # username -> conn
@@ -81,7 +81,7 @@ def handle_lobby_client(conn, addr):
 
                     send_json(conn, {"status": "ok", "msg": f"Welcome {username}"})
                 else:
-                    send_json(conn, {"status": "error", "msg": "Login failed"})
+                    send_json(conn, {"status": "error", "msg": "Wrong username or password or already online"})
 
             elif cmd == 'end_game':
                 # 玩家遊戲結束後的回報 (可選)
@@ -367,6 +367,6 @@ def handle_lobby_client(conn, addr):
                     broadcast_to_room(current_room_id, {
                         "cmd": "room_closed", "msg": "Host left, room closed."
                     })
-        
+        player_exit(current_user, role="player")
         conn.close()
         print(f"[Lobby] {addr} disconnected.")
