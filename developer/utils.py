@@ -203,7 +203,9 @@ def manifest_initial_setting(folder_path, username="developer"):
             "server_exe": "server/your_server_executable.exe",
             "client_exe": "client/your_client_executable.exe",
             "description": "good game",
-            "author": "遊戲開發者名稱"
+            "author": "遊戲開發者名稱",
+            "client_args": "",
+            "server_args": ""
         }
 
         game_id = input("請輸入遊戲 ID (英文、數字、底線): ").strip()
@@ -256,7 +258,18 @@ def manifest_initial_setting(folder_path, username="developer"):
             print("[Info] 使用預設遊戲描述。")
 
         template['author'] = username
-
+        
+        server_args = input("請輸入遊戲 Server 執行檔的啟動參數列表 (ex:--args args): ").strip()
+        if server_args:
+            template['server_args'] = server_args
+        else:
+            print("[Info] 未輸入參數，使用預設空值。")
+        
+        client_args = input("請輸入遊戲 Client 執行檔的啟動參數列表 (ex:--args args): ").strip()
+        if client_args:
+            template['client_args'] = client_args
+        else:
+            print("[Info] 未輸入參數，使用預設空值。")
         #重新輸出遊戲簡介確認是否要重新填寫
         print("\n=== 遊戲簡介確認 ===")
         for key, value in template.items():
@@ -370,6 +383,18 @@ def manifest_update_setting(folder_path, username="developer"):
 
         template['author'] = username
 
+        server_args = input("請輸入遊戲 Server 執行檔的啟動參數列表 (ex:--args args): ").strip()
+        if server_args:
+            template['server_args'] = server_args
+        else:
+            print("[Info] 未輸入參數，使用預設空值。")
+        
+        client_args = input("請輸入遊戲 Client 執行檔的啟動參數列表 (ex:--args args): ").strip()
+        if client_args:
+            template['client_args'] = client_args
+        else:
+            print("[Info] 未輸入參數，使用預設空值。")
+            
         #重新輸出遊戲簡介確認是否要重新填寫
         print("\n=== 遊戲簡介確認 ===")
         for key, value in template.items():
