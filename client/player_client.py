@@ -271,7 +271,10 @@ def check_game_update(sock, game_id, mode='download'):
                 choice = input("是否要下載最新版本？(y/n): ")
                 if choice.lower() != 'y':
                     print("取消下載。")
-                    return False
+                    if mode == 'download':
+                        return False
+                    else:
+                        return False, "no_update"
                 else:
                     if mode == 'download':
                         return True
@@ -282,7 +285,10 @@ def check_game_update(sock, game_id, mode='download'):
         choice = input("是否要下載最新版本？(y/n): ")
         if choice.lower() != 'y':
             print("取消下載。")
-            return False
+            if mode == 'download':
+                return False
+            else:
+                return False, "no_update"
         else:
             if mode == 'download':
                 return True
@@ -838,6 +844,76 @@ def join_room_flow(sock):
     sock.settimeout(None) 
     print("已返回大廳選單。")
 
+def review_game(sock):
+    """
+    評論遊戲 (Placeholder)
+    """
+    #列出玩過的遊戲
+    send_json(sock, {"cmd": "played_game_list"})
+    res = recv_json(sock)
+    if res and res['status'] == 'ok':
+        games = res['played_games']
+        print(f"\n=== 你玩過的遊戲列表 ({len(games)}) ===")
+        print(f"{'名稱':<20} {'作者':<20} {'版本':<10} {'評分'}")
+        print("-" * 60)
+        for g in games:
+            print(f"{g['game_id']:<20} {g['uploader']:<20} {g['version']:<10} {g.get('average_rating', 0)}")
+    else:
+        print("列表載入失敗。")
+        return
+    while True:
+        choice = input(f"請輸入要評論的遊戲編號(1~{len(games)}) (或輸入 q 返回): ").strip()
+        if choice.lower() == 'q' or (choice.isdigit() and 1 <= int(choice) <= len(games)):
+            break
+        else:
+            print("無效的輸入，請重新輸入。")
+    if choice.lower() == 'q':
+        return
+    game_id = games[int(choice)-1]['game_id']
+    while True:
+        rating = input("請給予遊戲評分 (1-5): ").strip()
+        if rating.isdigit() and 1 <= int(rating) <= 5:
+            rating = int(rating)
+            break
+        else:
+            print("無效的評分，請輸入 1-5 之間的數字。")
+    
+    MAX_COMMENT_LEN = 50
+    comment = ""
+    while True:
+        prompt = f"請撰寫評論內容 (限{MAX_COMMENT_LEN}字內)"
+        if comment:
+            prompt += f"（上次內容：{comment}）"
+        comment_new = input(f"{prompt}: ").strip()
+        # 若玩家直接按 Enter，保留原本內容
+        if not comment_new and comment:
+            comment_new = comment
+        if not comment_new:
+            print("評論內容不可為空，請重新輸入。")
+            continue
+        if len(comment_new) > MAX_COMMENT_LEN:
+            print(f"評論內容過長，請縮短至{MAX_COMMENT_LEN}字以內。")
+            comment = comment_new
+            continue
+        if any(ord(c) < 32 and c not in '\n\r\t' for c in comment_new):
+            print("評論內容包含無法處理的特殊字元，請重新輸入。")
+            comment = comment_new
+            continue
+        comment = comment_new
+        break
+    #送出評論
+    send_json(sock, {
+        "cmd": "submit_review",
+        "game_id": game_id,
+        "rating": rating,
+        "comment": comment
+    })
+    res = recv_json(sock)
+    if res and res['status'] == 'ok':
+        print("評論已送出，謝謝您的回饋！")
+    else:
+        print("評論送出失敗。")
+
 def main():
     
     # 1. 建立連線
@@ -884,9 +960,10 @@ def main():
         print("2. 下載遊戲 (Download Games)")
         print("3. 建立房間 (Create Room)")
         print("4. 加入房間 (Join Room)")
-        print("5. 登出/離開 (Exit)")
+        print("5. 評論遊戲 (Review Games)")
+        print("6. 登出/離開 (Exit)")
         
-        choice = input("請選擇功能 (1-5): ").strip()
+        choice = input("請選擇功能 (1-6): ").strip()
 
         if choice == '1':
             market_menu(sock)
@@ -897,6 +974,8 @@ def main():
         elif choice == '4':
             join_room_flow(sock)
         elif choice == '5':
+            review_game(sock)
+        elif choice == '6':
             print("Bye!")
             break
         else:
