@@ -138,3 +138,96 @@ def recv_file(sock, save_dir):
 
     print(f"[Download] Saved to {save_path}")
     return save_path
+
+def validate_game_folder_to_client(folder_path):
+    print(f"[Check] 正在檢查遊戲資料夾: {folder_path} ...")
+
+    # 1. 檢查 manifest 是否存在
+    manifest_path = os.path.join(folder_path, "manifest.json")
+    if not os.path.exists(manifest_path):
+        print("[Error] 找不到 manifest.json！ 目前無法下載此遊戲請稍後再試。")
+        return False
+
+    try:
+        # 2. 嘗試讀取 manifest 內容
+        with open(manifest_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        # 3. 檢查必要欄位
+        required_keys = ["game_id", "version", "server_exe", "client_exe"]
+        for key in required_keys:
+            if key not in config:
+                print(f"[Error] manifest.json 缺少必要欄位: {key}，目前無法下載此遊戲請稍後再試。")
+                return False
+        
+        # 4. 檢查執行檔是否真的存在 (這步最重要！)
+        # 因為 manifest 裡寫的路徑是相對路徑
+        client_exe_path = os.path.join(folder_path, config["client_exe"])
+
+        if not os.path.exists(client_exe_path):
+            print(f"[Error] 找不到 Client 執行檔: {config['client_exe']}，目前無法下載此遊戲請稍後再試。")
+            return False
+
+    except json.JSONDecodeError:
+        print("[Error] manifest.json 格式錯誤，無法解析 (Syntax Error)。")
+        return False
+    except Exception as e:
+        print(f"[Error] 檢查過程發生未預期錯誤: {e}")
+        return False
+
+    print("[Check] 檢查通過！準備壓縮...")
+    return True
+
+def zip_game_folder_to_player(folder_path, output_zip_name="temp_game.zip", username = "developer"):
+    """
+    將指定資料夾的內容壓縮成 zip 檔
+    回傳: 壓縮後的 zip 檔案路徑，如果失敗則回傳 None
+    """
+    # 1. 基本檢查
+    if not os.path.exists(folder_path):
+        print(f"[Error] Folder '{folder_path}' does not exist.")
+        return None
+
+
+    # 2. 檢查是否有 manifest.json (關鍵步驟！)
+    if not validate_game_folder_to_client(folder_path):
+        return None
+
+    # 3. 開始壓縮
+    print(f"[System] Zipping game files from '{folder_path}'...")
+    
+    try:
+        with zipfile.ZipFile(output_zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # 加入 manifest.json
+            manifest_path = os.path.join(folder_path, 'manifest.json')
+            zipf.write(manifest_path, arcname='manifest.json')
+            # 加入 client 資料夾下所有檔案
+            client_folder = os.path.join(folder_path, 'client')
+            for root, dirs, files in os.walk(client_folder):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, folder_path)  # 保留相對路徑
+                    zipf.write(file_path, arcname)
+        print(f"[System] Successfully packed into {output_zip_name}")
+        return output_zip_name
+
+    except Exception as e:
+        print(f"[Error] Failed to zip files: {e}")
+        return None
+    
+def compare_versions_player(v1, v2):
+    """
+    比較兩個版本號字串 (格式: x.y.z)
+    回傳:
+        1 if v1 > v2
+        -1 if v1 < v2
+        0 if v1 == v2
+    """
+    nums1 = [int(x) for x in v1.split('.')]
+    nums2 = [int(x) for x in v2.split('.')]
+    for a, b in zip(nums1, nums2):
+        if a > b:
+            return v1
+        elif a < b:
+            return v2
+    return v1  # 相同則回傳 v2
