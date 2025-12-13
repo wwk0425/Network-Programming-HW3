@@ -6,7 +6,7 @@ import threading
 
 # 引用我們之前定義好的工具
 from utils import recv_json, send_json, recv_file
-from db_storage.database import register_user, verify_login, add_or_update_game, get_all_games, remove_game
+from db_storage.database import register_user, verify_login, add_or_update_game, get_all_games, remove_game, player_exit
 
 # 設定遊戲儲存根目錄
 GAMES_ROOT_DIR = "games"
@@ -51,7 +51,7 @@ def handle_dev_client(conn, addr):
                     current_user = username
                     send_json(conn, {"status": "ok", "msg": f"Welcome, {username}!"})
                 else:
-                    send_json(conn, {"status": "error", "msg": "Invalid credentials"})
+                    send_json(conn, {"status": "error", "msg": "Wrong username or password or already online"})
 
             # === 2. 檢查登入狀態 (Middleware check) ===
             elif not current_user:
@@ -90,6 +90,7 @@ def handle_dev_client(conn, addr):
         traceback.print_exc()
     finally:
         print(f"[Dev] {addr} disconnected.")
+        player_exit(current_user, role="developer")
         conn.close()
 
 
@@ -138,7 +139,7 @@ def handle_upload_process(conn, uploader_name):
         if not game_id or not version:
             raise Exception("Invalid manifest: missing game_id or version")
         game_path = f"{game_id}-{uploader_name}"
-        
+
         # 5. 部署到最終目錄: games/{game_id}/{version}/
         # 使用 os.path.join 確保跨平台相容
         final_dir = os.path.join(GAMES_ROOT_DIR, game_path, version)
