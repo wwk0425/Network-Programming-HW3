@@ -130,7 +130,17 @@ def register_user(username, password, role="player"):
             return False 
         
         # 寫入
-        data[group][username] = password
+        if role == "player":
+            data[group][username] = {
+                "password": password,
+                "game_records": [],  # 紀錄玩家的遊戲結果
+                "status": "offline"  # 玩家狀態
+            }
+        else:
+            data[group][username] = {
+                "password": password,
+                "status": "offline"  # 開發者狀態
+            }
         
         with open(USER_DB_FILE, 'w') as f:
             json.dump(data, f, indent=4)
@@ -144,10 +154,28 @@ def verify_login(username, password, role="player"):
         group = "players" if role == "player" else "developers"
         
         # 檢查帳密
-        if username in data[group] and data[group][username] == password:
-            return True
+        if username in data[group] and isinstance(data[group][username], dict):
+            if data[group][username].get("password") == password:
+                if data[group][username].get("status") != "online":
+                    data[group][username]["status"] = "online"
+                    with open(USER_DB_FILE, 'w') as f:
+                        json.dump(data, f, indent=4)
+                    return True
         return False
     
+def player_exit(username, role="player"):
+    with user_lock:
+        with open(USER_DB_FILE, 'r') as f:
+            data = json.load(f)
+        
+        # 尋找目前在線的玩家或開發者，並設為離線
+        group = "players" if role == "player" else "developers"
+        if username in data[group]:
+            data[group][username]["status"] = "offline"
+        
+        with open(USER_DB_FILE, 'w') as f:
+            json.dump(data, f, indent=4)
+
 def create_room_in_db(room_id, game_id, host_name, max_players):
     with room_lock:
         with open(ROOM_DB_FILE, 'r') as f:
@@ -159,7 +187,8 @@ def create_room_in_db(room_id, game_id, host_name, max_players):
             "host": host_name,
             "status": "Waiting",
             "max_players": max_players,
-            "players": [host_name] # 只存名字 (String)，不存 Socket
+            "players": [host_name], # 只存名字 (String)，不存 Socket
+            "ready_players": []
         }
         
         with open(ROOM_DB_FILE, 'w') as f:
@@ -220,7 +249,7 @@ def update_room_status(room_id, status, game_port=None):
 
 def remove_player_from_room(room_id, player_name):
     """
-    玩家離開或斷線。如果房主離開，回傳 'room_closed'，否則回傳 'player_left'
+    玩家離開或斷線。如果房主離開更換房主，回傳 'player_left'
     """
     with room_lock:
         with open(ROOM_DB_FILE, 'r') as f:
@@ -237,8 +266,14 @@ def remove_player_from_room(room_id, player_name):
         
         result = "player_left"
         
+        if room['host'] == player_name:
+            # 房主離開，指定新房主
+            if room['players']:
+                room['host'] = room['players'][0] # 指定第一個玩家為新房主
+                result = "host_changed"
+                
         # 檢查: 如果沒人了，或房主離開 -> 刪除房間
-        if not room['players'] or room['host'] == player_name:
+        if not room['players']:
             del rooms[rid]
             result = "room_closed"
         else:
@@ -291,3 +326,76 @@ def remove_game(game_id, uploader_name):
         
         print(f"[DB] Game '{game_id}' removed from database.")
         return True
+
+def add_player_ready(room_id, player_name):
+    with room_lock:
+        with open(ROOM_DB_FILE, 'r') as f:
+            rooms = json.load(f)
+        
+        rid = str(room_id)
+        if rid in rooms:
+            room = rooms[rid]
+            if 'ready_players' not in room:
+                room['ready_players'] = []
+            if player_name not in room['ready_players']:
+                room['ready_players'].append(player_name)
+            
+            with open(ROOM_DB_FILE, 'w') as f:
+                json.dump(rooms, f, indent=4)
+
+def remove_player_ready(room_id):
+    with room_lock:
+        with open(ROOM_DB_FILE, 'r') as f:
+            rooms = json.load(f)
+        
+        rid = str(room_id)
+        if rid in rooms:
+            room = rooms[rid]
+            #移除所有玩家準備狀態
+            if 'ready_players' in room:
+                room['ready_players'] = []
+            
+            with open(ROOM_DB_FILE, 'w') as f:
+                json.dump(rooms, f, indent=4)
+
+def record_player_game_record(player_name, game_id, result):
+    """
+    紀錄玩家的遊戲結果
+    result: 'win' or 'lose' or 'draw'
+    """
+    with user_lock:
+        with open(USER_DB_FILE, 'r') as f:
+            data = json.load(f)
+        
+        if player_name not in data['players']:
+            return False
+        
+        player_data = data['players'][player_name]
+        if 'game_records' not in player_data:
+            player_data['game_records'] = []
+        
+        record = {
+            "game_id": game_id,
+            "result": result,
+            "time": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        player_data['game_records'].append(record)
+        
+        with open(USER_DB_FILE, 'w') as f:
+            json.dump(data, f, indent=4)
+        
+        return True
+
+def get_player_game_records(player_name):
+    """
+    取得玩家的遊戲紀錄列表
+    """
+    with user_lock:
+        with open(USER_DB_FILE, 'r') as f:
+            data = json.load(f)
+        
+        if player_name not in data['players']:
+            return []
+        
+        player_data = data['players'][player_name]
+        return player_data.get('game_records', [])
