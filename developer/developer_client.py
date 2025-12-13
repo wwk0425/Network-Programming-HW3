@@ -7,7 +7,7 @@ import json
 
 # 假設 network.py 放在同層級的 utils 資料夾
 # 如果放在同層，直接 from network import ...
-from utils import send_json, recv_json, send_file, zip_game_folder
+from utils import send_json, recv_json, send_file, zip_game_folder,paged_dev_menu
 from config import DEV_PORT
 from template.create_game_template import create_game_template
 
@@ -107,6 +107,9 @@ def upload_game_workflow(sock, username):
             if g['game_id'] == selected_game:
                 print(f"[Info] 您已經上傳過此遊戲 '{selected_game}'，請使用更新遊戲內容功能來更新它。")
                 return
+    else:
+        print("[Error] 無法取得已上傳遊戲列表，請稍後再試。")
+        return
 
     game_folder_path = os.path.join(games_path, selected_game)
     # 1. 本地檢查與壓縮
@@ -114,36 +117,54 @@ def upload_game_workflow(sock, username):
     if not zip_path:
         return # 檢查失敗，中止
 
-    try:
-        # 2. 發送上傳請求
-        print("[Upload] 正在請求上傳...")
-        send_json(sock, {"cmd": "upload_game"})
+    while True:
+        try:
+            # 2. 發送上傳請求
+            print("[Upload] 正在請求上傳...")
+            send_json(sock, {"cmd": "upload_game"})
 
-        # 3. 等待 Server 說 "Ready" (Handshake)
-        # 這對應我們在 dev_service 寫的邏輯
-        res = recv_json(sock)
-        if not res or res.get('status') != 'ready_to_receive':
-            print(f"[Error] Server 拒絕上傳: {res.get('msg')}")
-            return
+            # 3. 等待 Server 說 "Ready" (Handshake)
+            # 這對應我們在 dev_service 寫的邏輯
+            res = recv_json(sock)
+            if not res or res.get('status') != 'ready_to_receive':
+                print(f"[Error] Server 拒絕上傳: {res.get('msg')}")
+                choice = input("是否重試? (y/n): ")
+                if choice.lower() != 'y':
+                    return
+                else:
+                    continue
 
-        # 4. 開始傳檔
-        print("[Upload] 開始傳輸檔案...")
-        send_file(sock, zip_path)
+            # 4. 開始傳檔
+            print("[Upload] 開始傳輸檔案...")
+            send_file(sock, zip_path)
 
-        # 5. 等待最終確認
-        final_res = recv_json(sock)
-        if final_res and final_res['status'] == 'ok':
-            print(f"\n>>> {final_res['msg']} <<<")
-            print("(您現在可以在 '我的遊戲' 列表中看到它了)")
-        else:
-            print(f"[Error] 上架失敗: {final_res.get('msg')}")
+            # 5. 等待最終確認
+            final_res = recv_json(sock)
+            if final_res and final_res['status'] == 'ok':
+                print(f"\n>>> {final_res['msg']} <<<")
+                print("(您現在可以在 '我的遊戲' 列表中看到它了)")
+                break
+            else:
+                print(f"[Error] 上架失敗: {final_res.get('msg')}")
+                choice = input("是否重試? (y/n): ")
+                if choice.lower() != 'y':
+                    return
+                else:
+                    continue
 
-    except Exception as e:
-        print(f"[Error]連線異常: {e}")
-    finally:
-        # 清除暫存檔
-        if os.path.exists(zip_path):
-            os.remove(zip_path)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+            raise
+        except Exception as e:
+            print(f"[Error] 本地處理異常: {e}")
+            choice = input("是否重試? (y/n): ")
+            if choice.lower() != 'y':
+                return
+            else:
+                continue
+        finally:
+            # 清除暫存檔
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
 
 def update_game_workflow(sock, username):
     """
@@ -164,6 +185,9 @@ def update_game_workflow(sock, username):
     res = recv_json(sock)
     if res and res['status'] == 'ok':
         my_games = res['games']
+    else:
+        print("[Error] 無法取得已上傳遊戲列表，請稍後再試。")
+        return
             
     print(f"[Info] 目前可更新的遊戲專案有:")
 
@@ -190,37 +214,55 @@ def update_game_workflow(sock, username):
     zip_path = zip_game_folder(game_folder_path, username=username, update=True)
     if not zip_path:
         return # 檢查失敗，中止
+    
+    while True:
+        try:
+            # 2. 發送上傳請求
+            print("[Upload] 正在請求上傳...")
+            send_json(sock, {"cmd": "upload_game"})
 
-    try:
-        # 2. 發送上傳請求
-        print("[Upload] 正在請求上傳...")
-        send_json(sock, {"cmd": "upload_game"})
+            # 3. 等待 Server 說 "Ready" (Handshake)
+            # 這對應我們在 dev_service 寫的邏輯
+            res = recv_json(sock)
+            if not res or res.get('status') != 'ready_to_receive':
+                print(f"[Error] Server 拒絕上傳: {res.get('msg')}")
+                choice = input("是否重試? (y/n): ")
+                if choice.lower() != 'y':
+                    return
+                else:
+                    continue
 
-        # 3. 等待 Server 說 "Ready" (Handshake)
-        # 這對應我們在 dev_service 寫的邏輯
-        res = recv_json(sock)
-        if not res or res.get('status') != 'ready_to_receive':
-            print(f"[Error] Server 拒絕上傳: {res.get('msg')}，請重新嘗試更新")
-            return
+            # 4. 開始傳檔
+            print("[Upload] 開始傳輸檔案...")
+            send_file(sock, zip_path)
 
-        # 4. 開始傳檔
-        print("[Upload] 開始傳輸檔案...")
-        send_file(sock, zip_path)
+            # 5. 等待最終確認
+            final_res = recv_json(sock)
+            if final_res and final_res['status'] == 'ok':
+                print(f"\n>>> {final_res['msg']} <<<")
+                print("(您現在可以在 '我的遊戲' 列表中看到新版本號了)")
+                break
+            else:
+                print(f"[Error] 更新失敗: {final_res.get('msg')}，請重新嘗試更新")
+                choice = input("是否重試? (y/n): ")
+                if choice.lower() != 'y':
+                    return
+                else:
+                    continue
 
-        # 5. 等待最終確認
-        final_res = recv_json(sock)
-        if final_res and final_res['status'] == 'ok':
-            print(f"\n>>> {final_res['msg']} <<<")
-            print("(您現在可以在 '我的遊戲' 列表中看到新版本號了)")
-        else:
-            print(f"[Error] 更新失敗: {final_res.get('msg')}，請重新嘗試更新")
-
-    except Exception as e:
-        print(f"[Error]連線異常: {e}，請重新嘗試更新")
-    finally:
-        # 清除暫存檔
-        if os.path.exists(zip_path):
-            os.remove(zip_path)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+            raise
+        except Exception as e:
+            print(f"[Error]連線異常: {e}，請重新嘗試更新")
+            choice = input("是否重試? (y/n): ")
+            if choice.lower() != 'y':
+                return
+            else:
+                continue
+        finally:
+            # 清除暫存檔
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
             
 def list_my_games(sock):
     """
@@ -242,117 +284,136 @@ def delete_game_workflow(sock, username):
     """
     Use Case D3: 下架遊戲內容
     """
-    while True:
-        print("\n=== 下架遊戲內容 ===")
-        send_json(sock, {"cmd": "my_games"})
-        res = recv_json(sock)
-        if res and res['status'] == 'ok':
-            my_games = res['games']
-                
-        print(f"[Info] 目前可下架的遊戲專案有:")
-
-        ##做了確認是否輸入在範圍內
-        list_game_length = len(my_games)
-
-        while True:
-            for idx, game in enumerate(my_games):
-                print(f"  {idx+1}. {game.get('game_id', 'Unknown')}")
-            choice = input(f"請輸入您想下架的遊戲:(1~{list_game_length})").strip()
-            if choice == '':
-                print("[Error] 輸入不可為空，請重新操作。")
-                continue
-            if 1 <= int(choice) <= list_game_length:
-                break
-            else:
-                print("[Error] 輸入超出範圍，請重新操作。")
-        print(f"[Info] 您是否確定選擇下架遊戲 '{my_games[int(choice)-1].get('game_id')}'，此操作無法復原！")
-        confirm = input("請輸入 Y 確認下架，或其他鍵取消: ").strip()
-        if confirm.lower() != 'y':
-            print("下架操作已取消。")
-            return
-        else:
-            break
-        
-
-    selected_game = my_games[int(choice)-1].get('game_id')
-
-    # 發送下架請求
-    send_json(sock, {"cmd": "delete_game", "game_id": selected_game})
+    
+    print("\n=== 下架遊戲內容 ===")
+    send_json(sock, {"cmd": "my_games"})
     res = recv_json(sock)
     if res and res['status'] == 'ok':
-        print(f"[Info] 遊戲 '{selected_game}' 已成功下架。")
+        my_games = res['games']
     else:
-        print(f"[Error] 無法下架遊戲: {res.get('msg', 'Unknown error')}，請重新嘗試下架")
+        print("[Error] 無法取得已上傳遊戲列表，請稍後再試。")
+        return                
+    print(f"[Info] 目前可下架的遊戲專案有:")
+
+    ##做了確認是否輸入在範圍內
+    list_game_length = len(my_games)
+
+    while True:
+        for idx, game in enumerate(my_games):
+            print(f"  {idx+1}. {game.get('game_id', 'Unknown')}")
+        choice = input(f"請輸入您想下架的遊戲:(1~{list_game_length})").strip()
+        if choice == '':
+            print("[Error] 輸入不可為空，請重新操作。")
+            continue
+        if 1 <= int(choice) <= list_game_length:
+            break
+        else:
+            print("[Error] 輸入超出範圍，請重新操作。")
+    print(f"[Info] 您是否確定選擇下架遊戲 '{my_games[int(choice)-1].get('game_id')}'，此操作無法復原！")
+    confirm = input("請輸入 Y 確認下架，或其他鍵取消: ").strip()
+    if confirm.lower() != 'y':
+        print("下架操作已取消。")
+        return
+            
+    selected_game = my_games[int(choice)-1].get('game_id')
+    while True:
+        try:
+            # 發送下架請求
+            send_json(sock, {"cmd": "delete_game", "game_id": selected_game})
+            res = recv_json(sock)
+            if res and res['status'] == 'ok':
+                print(f"[Info] 遊戲 '{selected_game}' 已成功下架。")
+                break
+            else:
+                print(f"[Error] 無法下架遊戲: {res.get('msg', 'Unknown error')}，請重新嘗試下架")
+                choice = input("是否重試? (y/n): ")
+                if choice.lower() != 'y':
+                    return
+                else:
+                    continue
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+            raise
+        except Exception as e:
+            print(f"[Error]本地異常: {e}，請重新嘗試下架遊戲。")
+            choice = input("是否重試? (y/n): ")
+            if choice.lower() != 'y':
+                return
+            else:
+                continue
 # --- 主程式 (選單迴圈) ---
 
 def main():
-    # 1. 建立連線
+    sock = None
     try:
+        # 1. 建立連線
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((SERVER_IP, DEV_PORT))
         print(f"[System] 已連線至 Developer Server ({SERVER_IP}:{DEV_PORT})")
-    except Exception as e:
-        print(f"[Error] 無法連線至 Server: {e}")
-        return
 
-    # 2. 先登入才能進主選單
-    while True:
-        print("\n=== 開發者入口 ===")
-        print("1. 登入 (Login)")
-        print("2. 註冊 (Register)")
-        print("3. 離開 (Exit)")
-        
-        choice = input("請選擇功能 (1-3): ").strip()
-        
-        if choice == '1':
-            current_user = login(sock)
-            if current_user:
-                break
-        elif choice == '2':
-            register(sock)
-        elif choice == '3':
-            print("Bye!")
+        # 2. 先登入才能進主選單
+        while True:
+            print("\n=== 開發者入口 ===")
+            print("1. 登入 (Login)")
+            print("2. 註冊 (Register)")
+            print("3. 離開 (Exit)")
+            choice = input("請選擇功能 (1-3): ").strip()
+            if choice == '1':
+                current_user = login(sock)
+                if current_user:
+                    break
+            elif choice == '2':
+                register(sock)
+            elif choice == '3':
+                print("Bye!")
+                sock.close()
+                return
+            else:
+                print("無效的輸入，請重新選擇。")
+
+        if not current_user:
+            print("登入取消，程式結束。")
             sock.close()
             return
-        else:
-            print("無效的輸入，請重新選擇。")
 
-    if not current_user:
-        print("登入取消，程式結束。")
-        sock.close()
-        return
+        # 3. 主選單迴圈
+        options = [
+                "上架新遊戲 (Upload Game)",
+                "列出我的遊戲 (List My Games)",
+                "創建遊戲模板 (Create Game Template)",
+                "更新遊戲內容 (Update Game Content)",
+                "下架遊戲內容 (Remove Game)",
+                "登出/離開 (Exit)"
+        ]
+        while True:
+            choice = str(paged_dev_menu(options, page_size=3))
+            if choice == '1':
+                upload_game_workflow(sock, current_user)
+            elif choice == '2':
+                list_my_games(sock)
+            elif choice == '3':
+                print("\n" + "="*7 + " Developer Menu " + "="*7)
+                template_name = input("請輸入遊戲名稱: ").strip()
+                create_game_template(template_name)
+            elif choice == '4':
+                update_game_workflow(sock, current_user)
+            elif choice == '5':
+                delete_game_workflow(sock, current_user)
+            elif choice == '6':
+                print("Bye!")
+                break
+            else:
+                print("無效的輸入，請重新選擇。")
 
-    # 3. 主選單迴圈
-    while True:
-        print("\n" + "="*10 + " Developer Menu " + "="*10)
-        print("1. 上架新遊戲 (Upload Game)")
-        print("2. 列出我的遊戲 (List My Games)")
-        print("3. 創建遊戲模板 (Create Game Template)")
-        print("4. 更新遊戲內容 (Update Game Content)")
-        print("5. 下架遊戲內容 (Remove Game)")
-        print("6. 登出/離開 (Exit)")
-        
-        choice = input("請選擇功能 (1-6): ").strip()
-
-        if choice == '1':
-            upload_game_workflow(sock, current_user)
-        elif choice == '2':
-            list_my_games(sock)
-        elif choice == '3':
-            print("\n" + "="*7 + " Developer Menu " + "="*7)
-            template_name = input("請輸入遊戲名稱: ").strip()
-            create_game_template(template_name)
-        elif choice == '4':
-            update_game_workflow(sock, current_user)
-        elif choice == '5':
-            delete_game_workflow(sock, current_user)
-        elif choice == '6':
-            print("Bye!")
-            break
-        else:
-            print("無效的輸入，請重新選擇。")
-
-    sock.close()
+    except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+        print(f"\n[Error] 與伺服器連線中斷 ({e})，程式即將關閉。")
+    except Exception as e:
+        print(f"\n[Error] 發生未預期的錯誤: {e}\n程式即將關閉。")
+    finally:
+        if sock:
+            try:
+                sock.close()
+            except:
+                pass
 
 if __name__ == "__main__":
     main()
