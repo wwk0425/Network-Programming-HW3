@@ -7,7 +7,7 @@ import json
 
 # 引用工具與資料庫
 from utils import recv_json, send_json, zip_game_folder_to_player, send_file, compare_versions_player
-from db_storage.database import verify_login, register_user, get_all_games, create_room_in_db, get_all_rooms, join_room_in_db, update_room_status, remove_player_from_room, get_room_info, add_player_ready, remove_player_ready
+from db_storage.database import verify_login, register_user, get_all_games, create_room_in_db, get_all_rooms, join_room_in_db, update_room_status, remove_player_from_room, get_room_info, add_player_ready, remove_player_ready, record_player_game_record, get_player_game_records, add_review
 from config import LOBBY_PORT
 # --- 全域變數 ---
 online_users = {} # username -> conn
@@ -88,6 +88,10 @@ def handle_lobby_client(conn, addr):
                 room_id = req.get('room_id')
                 result = req.get('result')  # Win/Lose/Draw
                 # 這裡可以更新玩家的遊戲紀錄或評分
+                room = get_room_info(room_id)
+                player = room['players']
+                for p in player:
+                    record_player_game_record(p, room['game_id'], result.lower())
                 #移除房間中準備的人數
                 remove_player_ready(room_id)
                 update_room_status(room_id, "Waiting", None)
@@ -203,9 +207,9 @@ def handle_lobby_client(conn, addr):
                 client_exe = all_games[game_id]['client_exe']
                 client_args = all_games[game_id].get('client_args', "")
                 full_exe_path = os.path.abspath(os.path.join(game_path, server_exe))
-                
+                player_num = len(room_info['players'])
                 try:
-                    cmd_list = ["python", full_exe_path, "--port", str(game_port), "--lobby_ip", "127.0.0.1", "--lobby_port", str(LOBBY_PORT), "--room_id", str(current_room_id)] + all_games[game_id].get('server_args', "").split() if full_exe_path.endswith('.py') else [full_exe_path, "--port", str(game_port), "--lobby_ip", "127.0.0.1", "--lobby_port", str(LOBBY_PORT), "--room_id", str(current_room_id)] + all_games[game_id].get('server_args', "").split()
+                    cmd_list = ["python", full_exe_path, "--port", str(game_port), "--lobby_ip", "127.0.0.1", "--lobby_port", str(LOBBY_PORT), "--room_id", str(current_room_id), "--players", str(player_num)] + all_games[game_id].get('server_args', "").split() if full_exe_path.endswith('.py') else [full_exe_path, "--port", str(game_port), "--lobby_ip", "127.0.0.1", "--lobby_port", str(LOBBY_PORT), "--room_id", str(current_room_id), "--players", str(player_num)] + all_games[game_id].get('server_args', "").split()
                     subprocess.Popen(cmd_list, cwd=os.path.abspath(game_path))
                     
                     # 3. 更新 DB 狀態
@@ -320,7 +324,25 @@ def handle_lobby_client(conn, addr):
                     # 清除暫存檔
                     if os.path.exists(zip_path):
                         os.remove(zip_path)
+            # 評論
+            elif cmd == "played_game_list":
+                records = get_player_game_records(current_user)
+                unique_game_ids = set(record["game_id"] for record in records)
+                games_data = get_all_games()
+                # 轉成 List 回傳
+                filtered_games = [games_data[gid] for gid in unique_game_ids if gid in games_data]
+                send_json(conn, {"status": "ok", "played_games": filtered_games})
 
+            elif cmd == 'submit_review':
+                game_id = req.get('game_id')
+                rating = req.get('rating')
+                comment = req.get('comment')
+                add_review(
+                    game_id=game_id,
+                    player_name=current_user,
+                    score=rating,
+                    comment=comment)
+                send_json(conn, {"status": "ok", "msg": "Review submitted successfully."})
             else:
                 send_json(conn, {"status": "error", "msg": "Unknown command"})
 
