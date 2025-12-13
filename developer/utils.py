@@ -2,7 +2,7 @@ import json
 import os
 import struct
 import zipfile
-
+import math
 def send_json(sock, data_dict):
     """
     將 Python Dict 轉為 JSON -> 加上長度 Header -> 發送
@@ -202,7 +202,7 @@ def manifest_initial_setting(folder_path, username="developer"):
             "max_players": 4,
             "server_exe": "server/your_server_executable.exe",
             "client_exe": "client/your_client_executable.exe",
-            "description": "good game",
+            "description": "",
             "author": "遊戲開發者名稱",
             "client_args": "",
             "server_args": ""
@@ -212,18 +212,20 @@ def manifest_initial_setting(folder_path, username="developer"):
         if game_id:
             template['game_id'] = game_id
         else:
-            print("[Warning] 未輸入遊戲 ID，將使用預設值。")
+            print("[Warning] 未輸入遊戲 ID，將使用預設值(your_game_id)。")
         
         min_players = input("請輸入最少玩家數 (預設 1): ").strip()
         if min_players.isdigit():
             template['min_players'] = int(min_players)
         else:
+            template['min_players'] = 1
             print("[Info] 偵測填入非數字或是空值，使用預設最少玩家數 1。")
 
         max_players = input("請輸入最多玩家數 (預設 4): ").strip()
         if max_players.isdigit():
             template['max_players'] = int(max_players)
         else:
+            template['max_players'] = 4
             print("[Info] 偵測填入非數字或是空值，使用預設最多玩家數 4。")
 
         server_path = os.path.join(folder_path, "server")
@@ -235,8 +237,14 @@ def manifest_initial_setting(folder_path, username="developer"):
         
         for idx , name in enumerate(os.listdir(server_path)):
             print(f"  {idx+1}. {name}")
-        
-        server_choice = input("請輸入要上傳的 Server 執行檔(1~5): ").strip()
+        server_files_length = len(os.listdir(server_path))
+        while True:
+            server_choice = input(f"請輸入要上傳的 Server 執行檔(1~{server_files_length}): ").strip()
+            if server_choice.isdigit() and 1 <= int(server_choice) <= server_files_length:
+                break
+            else:
+                print(f"[Warning] 請輸入有效的選項 (1~{server_files_length})。")
+
         selected_server = os.listdir(server_path)[int(server_choice)-1]
         template['server_exe'] = f"server/{selected_server}"
 
@@ -246,8 +254,14 @@ def manifest_initial_setting(folder_path, username="developer"):
         
         for idx , name in enumerate(os.listdir(client_path)):
             print(f"  {idx+1}. {name}")
-        
-        client_choice = input("請輸入要上傳的 Client 執行檔(1~5): ").strip()
+        client_files_length = len(os.listdir(client_path))
+        while True:
+            client_choice = input(f"請輸入要上傳的 Client 執行檔(1~{client_files_length}): ").strip()
+            if client_choice.isdigit() and 1 <= int(client_choice) <= client_files_length:
+                break
+            else:
+                print(f"[Warning] 請輸入有效的選項 (1~{client_files_length})。")
+
         selected_client = os.listdir(client_path)[int(client_choice)-1]
         template['client_exe'] = f"client/{selected_client}"
 
@@ -255,7 +269,8 @@ def manifest_initial_setting(folder_path, username="developer"):
         if description:
             template['description'] = description
         else:
-            print("[Info] 使用預設遊戲描述。")
+            template['description'] = ""
+            print("[Info] 偵測未輸入描述，使用預設空值。")
 
         template['author'] = username
         
@@ -263,19 +278,23 @@ def manifest_initial_setting(folder_path, username="developer"):
         if server_args:
             template['server_args'] = server_args
         else:
+            template['server_args'] = ""
             print("[Info] 未輸入參數，使用預設空值。")
         
         client_args = input("請輸入遊戲 Client 執行檔的啟動參數列表 (ex:--args args): ").strip()
         if client_args:
             template['client_args'] = client_args
         else:
+            template['client_args'] = ""
             print("[Info] 未輸入參數，使用預設空值。")
         #重新輸出遊戲簡介確認是否要重新填寫
         print("\n=== 遊戲簡介確認 ===")
         for key, value in template.items():
             print(f"{key}: {value}")
 
-        confirm = input("是否要重新填寫遊戲簡介? (y/n): ").strip().lower()
+        confirm = input("是否要重新填寫更新遊戲簡介? (y/n) 或輸入(q)取消: ").strip().lower()
+        if confirm == 'q':
+            return None
         if confirm != 'y':
             manifest_path = os.path.join(folder_path, "manifest.json")
             with open(manifest_path, 'w', encoding='utf-8') as f:
@@ -342,12 +361,14 @@ def manifest_update_setting(folder_path, username="developer"):
         if min_players.isdigit():
             template['min_players'] = int(min_players)
         else:
+            template['min_players'] = 1
             print("[Info] 偵測填入非數字或是空值，使用預設最少玩家數 1。")
 
         max_players = input("請輸入更新後最多玩家數 (預設 4): ").strip()
         if max_players.isdigit():
             template['max_players'] = int(max_players)
         else:
+            template['max_players'] = 4
             print("[Info] 偵測填入非數字或是空值，使用預設最多玩家數 4。")
 
         server_path = os.path.join(folder_path, "server")
@@ -359,8 +380,14 @@ def manifest_update_setting(folder_path, username="developer"):
         
         for idx , name in enumerate(os.listdir(server_path)):
             print(f"  {idx+1}. {name}")
-        
-        server_choice = input("請輸入要上傳的新 Server 執行檔(1~5): ").strip()
+        files_length = len(os.listdir(server_path))
+        while True:
+            server_choice = input(f"請輸入要上傳的新 Server 執行檔(1~{files_length}): ").strip()
+            if server_choice.isdigit() and 1 <= int(server_choice) <= files_length:
+                break
+            else:
+                print(f"[Warning] 請輸入有效的選項 (1~{files_length})。")
+                
         selected_server = os.listdir(server_path)[int(server_choice)-1]
         template['server_exe'] = f"server/{selected_server}"
 
@@ -371,7 +398,14 @@ def manifest_update_setting(folder_path, username="developer"):
         for idx , name in enumerate(os.listdir(client_path)):
             print(f"  {idx+1}. {name}")
         
-        client_choice = input("請輸入要上傳的新 Client 執行檔(1~5): ").strip()
+        client_files_length = len(os.listdir(client_path))
+        while True:
+            client_choice = input(f"請輸入要上傳的新 Client 執行檔(1~{client_files_length}): ").strip()
+            if client_choice.isdigit() and 1 <= int(client_choice) <= client_files_length:
+                break
+            else:
+                print(f"[Warning] 請輸入有效的選項 (1~{client_files_length})。")
+                
         selected_client = os.listdir(client_path)[int(client_choice)-1]
         template['client_exe'] = f"client/{selected_client}"
 
@@ -379,7 +413,8 @@ def manifest_update_setting(folder_path, username="developer"):
         if description:
             template['update_patch'] = description
         else:
-            print("[Info] 使用預設遊戲描述。")
+            template['update_patch'] = ""
+            print("[Info] 偵測未輸入描述，使用預設空值。")
 
         template['author'] = username
 
@@ -387,12 +422,14 @@ def manifest_update_setting(folder_path, username="developer"):
         if server_args:
             template['server_args'] = server_args
         else:
+            template['server_args'] = ""
             print("[Info] 未輸入參數，使用預設空值。")
         
         client_args = input("請輸入遊戲 Client 執行檔的啟動參數列表 (ex:--args args): ").strip()
         if client_args:
             template['client_args'] = client_args
         else:
+            template['client_args'] = ""
             print("[Info] 未輸入參數，使用預設空值。")
             
         #重新輸出遊戲簡介確認是否要重新填寫
@@ -400,7 +437,9 @@ def manifest_update_setting(folder_path, username="developer"):
         for key, value in template.items():
             print(f"{key}: {value}")
 
-        confirm = input("是否要重新填寫更新遊戲簡介? (y/n): ").strip().lower()
+        confirm = input("是否要重新填寫更新遊戲簡介? (y/n) 或輸入(q)取消: ").strip().lower()
+        if confirm == 'q':
+            return None
         if confirm != 'y':
             manifest_path = os.path.join(folder_path, "manifest.json")
             with open(manifest_path, 'w', encoding='utf-8') as f:
@@ -408,3 +447,33 @@ def manifest_update_setting(folder_path, username="developer"):
             
             break
     return template
+
+def paged_dev_menu(options, page_size=3):
+    page = 0
+    total_pages = math.ceil(len(options) / page_size)
+    #total_pages = (len(options) + page_size - 1) // page_size
+    while True:
+        start = page * page_size
+        end = start + page_size
+        print("\n" + "="*10 + " Developer Menu " + "="*10)
+        for idx, opt in enumerate(options[start:end], start=1):
+            print(f"{idx}. {opt}")
+        if total_pages > 1:
+            if page > 0:
+                print("p. 上一頁 (Prev Page)")
+            if page < total_pages - 1:
+                print("n. 下一頁 (Next Page)")
+        choice = input("請選擇功能: ").strip().lower()
+        if choice == 'n' and page < total_pages - 1:
+            page += 1
+        elif choice == 'p' and page > 0:
+            page -= 1
+        elif choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < min(page_size, len(options) - start):
+                print(start + idx + 1)
+                return start + idx + 1  # 回傳選項編號（1-based）
+            else:
+                print("無效的輸入，請重新選擇yr。")
+        else:
+            print("無效的輸入，請重新選擇。")
