@@ -283,9 +283,9 @@ def handle_lobby_client(conn, addr):
                     print(f"[System] 已關閉房間 {room_id} 的遊戲進程")
                 if room_id in room_processes:
                     del room_processes[room_id] 
-                remove_player_ready(room_id)
-                update_room_status(room_id, "Waiting", None)
-                broadcast_to_room(room_id, {"cmd": "game_start_failed", "msg": "有玩家啟動遊戲失敗，遊戲已中止"})
+                    remove_player_ready(room_id)
+                    update_room_status(room_id, "Waiting", None)
+                    broadcast_to_room(room_id, {"cmd": "game_start_failed", "msg": "有玩家啟動遊戲失敗，遊戲已中止"})
 
             elif cmd == 'leave_room':
                 if not current_room_id:

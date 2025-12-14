@@ -7,6 +7,7 @@ import zipfile
 import json
 import threading
 import subprocess
+import argparse
 # 假設 network.py 放在同層級的 utils 資料夾
 # 如果放在同層，直接 from network import ...
 from utils import send_json, recv_json, recv_file
@@ -26,9 +27,36 @@ def room_listener(sock):
     """
     global stop_room_listener
     print("[System] 已進入房間監聽模式...")
+    #先收一次player_joined得到歡迎訊息
+    msg = recv_json(sock)
+    if not msg:
+        print("[System] Server 斷線")
+        os._exit(0)
+    cmd = msg.get('cmd')
+    status = msg.get('status')
+    if cmd == 'player_joined':
+        print(f"\n>>> [通知] {msg['username']} 加入了房間！")
+    #先確認自己是不是房主
+
+    is_host = False
+    state = "waiting"
+    send_json(sock, {"cmd": "get_host"})
+    res = recv_json(sock)
+    if res and res['status'] == 'ok':
+        is_host = res['host']
     
+    if not stop_room_listener and state == "waiting" and is_host:
+        print("\n====房間功能選單====")
+        print("1. 開始遊戲 (Start Game)")
+        print("2. 離開房間 (Leave Room)")
+        print("請選擇功能: ", end='', flush=True)
+    elif not stop_room_listener and state == "waiting" and not is_host:
+        print("\n====房間功能選單====")
+        print("1. 準備 (Ready) [若按下準備就無法取消，請等待房主開始遊戲]")
+        print("2. 離開房間 (Leave Room)")
+        print("請選擇功能: ", end='', flush=True)
+
     while not stop_room_listener:
-        state = "waiting"
         try:
             # 設定 timeout，讓執行緒有機會檢查 stop_room_listener 變數
             sock.settimeout(0.5) 
@@ -64,7 +92,16 @@ def room_listener(sock):
                 state = "playing"
                 # 這裡呼叫 subprocess 啟動遊戲...
                 client_args = msg.get('client_args', "")
-                game_path = msg.get('game_path', '.')
+                # 伺服器傳來的 game_path 只到 games/game_id/version，要補上本地 username 目錄
+                server_game_path = msg.get('game_path', '.')
+                # 取出 game_id, version
+                parts = server_game_path.strip(os.sep).split(os.sep)
+                if len(parts) >= 2:
+                    game_id = parts[-2]
+                    version = parts[-1]
+                    game_path = os.path.join(GAMES_ROOT_DIR, game_id, version)
+                else:
+                    game_path = server_game_path
                 client_exe = msg.get('client_exe', '')
                 current_room_id = msg.get('room_id', '')
                 full_exe_path = os.path.abspath(os.path.join(game_path, client_exe))
@@ -102,6 +139,10 @@ def room_listener(sock):
                 break
             elif cmd == 'host_changed':
                 print(f"\n>>> [通知] {msg['msg']}")
+                send_json(sock, {"cmd": "get_host"})
+                res = recv_json(sock)
+                if res and res['status'] == 'ok':
+                    is_host = res['host']
             elif cmd == 'game_ended':
                 if game_process:
                     game_process.terminate()
@@ -120,18 +161,14 @@ def room_listener(sock):
             else:
                 print(f"\n>>> [通知] 收到未知指令: {msg}")
 
-            send_json(sock, {"cmd": "get_host"})
+            
 
-            res = recv_json(sock)
-            if res and res['status'] == 'ok':
-                host_flag = res['host']
-
-            if not stop_room_listener and state == "waiting" and host_flag:
+            if not stop_room_listener and state == "waiting" and is_host:
                 print("\n====房間功能選單====")
                 print("1. 開始遊戲 (Start Game)")
                 print("2. 離開房間 (Leave Room)")
                 print("請選擇功能: ", end='', flush=True)
-            elif not stop_room_listener and state == "waiting" and not host_flag:
+            elif not stop_room_listener and state == "waiting" and not is_host:
                 print("\n====房間功能選單====")
                 print("1. 準備 (Ready) [若按下準備就無法取消，請等待房主開始遊戲]")
                 print("2. 離開房間 (Leave Room)")
@@ -1015,6 +1052,20 @@ def review_game(sock):
                 continue
 
 def main():
+    parser = argparse.ArgumentParser()
+    # 讓腳本可以傳入 --user Player1 來區分下載路徑
+    parser.add_argument('--user', type=str, default='Player1', help="模擬的使用者名稱 (決定下載路徑)")
+    # parser.add_argument('--ip', type=str, default='127.0.0.1')
+    # parser.add_argument('--port', type=int, default=9000)
+    args = parser.parse_args()
+
+    global GAMES_ROOT_DIR
+    GAMES_ROOT_DIR = os.path.join("games", args.user)
+    if not os.path.exists(GAMES_ROOT_DIR):
+        os.makedirs(GAMES_ROOT_DIR)
+
+    print(f"[System] 歡迎 {args.user}！您的遊戲將下載至: {GAMES_ROOT_DIR}")
+
     sock = None
     try:
         # 1. 建立連線
