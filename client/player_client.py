@@ -18,6 +18,7 @@ SERVER_IP = '127.0.0.1'
 # DEV_PORT = 9001  # 開發者專用 Port
 GAMES_ROOT_DIR = "games"  # 下載後遊戲存放根目錄
 in_game = threading.Event()
+game_process = None
 # --- 功能函式 ---
 def room_listener(sock):
     """
@@ -65,17 +66,26 @@ def room_listener(sock):
                 client_args = msg.get('client_args', "")
                 game_path = msg.get('game_path', '.')
                 client_exe = msg.get('client_exe', '')
+                current_room_id = msg.get('room_id', '')
                 full_exe_path = os.path.abspath(os.path.join(game_path, client_exe))
                 try:
                     cmd_list = ["python", full_exe_path,"--ip", str(msg['ip']), "--port", str(msg['port'])] + client_args.split() if full_exe_path.endswith('.py') else [full_exe_path, "--ip", msg['ip'], "--port", str(msg['port'])] + client_args.split()
-                    subprocess.Popen(cmd_list, cwd=os.path.abspath(game_path))
-                    
-                    #send_json(conn, {"status": "ok"})
-                    
+                    game_process = subprocess.Popen(cmd_list, cwd=os.path.abspath(game_path))
                 except Exception as e:
+                    game_process = None
                     print (f"[Error] 啟動遊戲失敗: {e}")
-                    send_json(sock, {"status": "error", "msg": str(e)})
-                # start_game_process(...)
+                    send_json(sock, {"cmd": "client_start_failed", "room_id": current_room_id, "reason": str(e)})
+
+            elif cmd == 'game_start_failed':
+                if game_process:
+                    game_process.terminate()
+                    game_process = None
+                in_game.set()
+                time.sleep(1)
+                in_game.clear()
+                print(f"\n>>> [錯誤] 遊戲無法開始: {msg.get('msg', 'Unknown error')}")
+                state = "waiting"
+
             elif cmd == 'create_room':
                 print(f"\n>>> [通知] 房間建立成功！房間 ID: {msg['room_id']}")
             elif cmd == 'room_closed':
@@ -93,6 +103,9 @@ def room_listener(sock):
             elif cmd == 'host_changed':
                 print(f"\n>>> [通知] {msg['msg']}")
             elif cmd == 'game_ended':
+                if game_process:
+                    game_process.terminate()
+                    game_process = None
                 in_game.clear()
                 print(f"\n>>> [通知] 遊戲結束！")
                 state = "waiting"
@@ -188,17 +201,35 @@ def list_all_games(sock):
     列出商城中的遊戲 (Optional but useful)
     """
     while True:
-        send_json(sock, {"cmd": "list_games"})
-        res = recv_json(sock)
-        if res and res['status'] == 'ok':
-            games = res['games']
-            print(f"\n=== 商城遊戲列表 ({len(games)}) ===")
-            print(f"{'名稱':<20} {'作者':<20} {'版本':<10} {'評分'}")
-            print("-" * 60)
-            for g in games:
-                print(f"{g['game_id']:<20} {g['uploader']:<20} {g['version']:<10} {g.get('average_rating', 0)}")
-        else:
-            print("列表載入失敗。")
+        while True:
+            try:
+                send_json(sock, {"cmd": "list_games"})
+                res = recv_json(sock)
+                if res and res['status'] == 'ok':
+                    games = res['games']
+                    if not games:
+                        print("目前沒有可遊玩的遊戲。")
+                        return
+                    print(f"\n=== 商城遊戲列表 ({len(games)}) ===")
+                    print(f"{'名稱':<20} {'作者':<20} {'版本':<10} {'評分'}")
+                    print("-" * 60)
+                    for g in games:
+                        print(f"{g['game_id']:<20} {g['uploader']:<20} {g['version']:<10} {g.get('average_rating', 0)}")
+                    break
+                else:
+                    print("列表載入失敗。")
+                    choice = input("是否重試? (y/n): ")
+                    if choice.lower() != 'y':
+                        return
+                    else:
+                        continue
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+                raise
+            except Exception as e:
+                print(f"列表載入失敗: {e}")
+                choice = input("是否重試? (y/n): ")
+                if choice.lower() != 'y':
+                    return
 
         while True:
             choice = input("輸入編號來更進一步了解遊戲細節，或輸入 q 返回: ")
@@ -214,12 +245,34 @@ def list_all_games(sock):
         print("遊戲名稱:", selected_game['game_id'])
         print("作者:", selected_game['uploader'])
         print("版本:", selected_game['version'])
-        print("遊戲簡介:", selected_game.get('description', '無'))
+        if selected_game.get('description') == "":
+            print("遊戲簡介: 尚未提供簡介")
+        else:
+            print("遊戲簡介:", selected_game.get('description', '無'))
+        if selected_game.get('update_patch') == "":
+            print("更新說明: 尚未提供更新說明")
+        else:
+            print("更新說明:", selected_game.get('update_patch', '無'))
         print("支援最少人數:", selected_game.get('min_players', '未知'))
         print("支援最多人數:", selected_game.get('max_players', '未知'))
-        # print("遊戲類型:", selected_game.get('type', '未知')) !!還沒做
-        print("評分:", selected_game.get('average_rating', 0))
-        print("玩家評論:", selected_game.get('reviews', '無'))
+        if selected_game.get('type') == "":
+            print("遊戲類型: 尚未提供遊戲類型")
+        else:
+            print("遊戲類型:", selected_game.get('type', '未知'))
+        if selected_game.get('average_rating') == 0.0:
+            print("評分: 尚未提供評分")
+        else:
+            print("評分:", selected_game.get('average_rating', 0))
+        if selected_game.get('reviews') == []:
+            print("玩家評論: 尚未有玩家評論")
+        else:
+            #選最新的5則評論顯示
+            print("玩家評論:")
+            reviews = selected_game.get('reviews', [])
+            reviews_sorted = sorted(reviews, key=lambda r: r['time'], reverse=True)
+            latest_five_reviews = reviews_sorted[:5]
+            for review in latest_five_reviews:
+                print(f"  - {review['user']} 評分: {review['score']} 評論: {review['comment']}")
 
         choice = input("是否返回商城遊戲列表?(若否，則返回商城大廳) (y/n): ")
         if choice.lower() != 'y':
@@ -280,6 +333,12 @@ def check_game_update(sock, game_id, mode='download'):
                         return True
                     else:
                         return True, "download"
+        else:
+            print("無法比較版本，請稍後再試。")
+            if mode == 'download':
+                return False
+            else:
+                return False, "no_update"
     else:
         print(f"你尚未擁有此遊戲，將下載最新版本。")
         choice = input("是否要下載最新版本？(y/n): ")
@@ -302,47 +361,51 @@ def download_game(sock):
     temp_zip = "temp_upload.zip"
     temp_extract_folder = "temp_extract"
 
+
+    send_json(sock, {"cmd": "list_games"})
+    res = recv_json(sock)
+    if res and res['status'] == 'ok':
+        games = res['games']
+        print(f"\n=== 商城遊戲列表 ({len(games)}) ===")
+        print(f"{'名稱':<20} {'作者':<20} {'版本':<10} {'評分'}")
+        print("-" * 60)
+        for g in games:
+            if g['status'] == 'unavailable':
+                continue
+            print(f"{g['game_id']:<20} {g['uploader']:<20} {g['version']:<10} {g.get('average_rating', 0)}")
+    else:
+        print("列表載入失敗。")
+        return
+
     while True:
-        send_json(sock, {"cmd": "list_games"})
-        res = recv_json(sock)
-        if res and res['status'] == 'ok':
-            games = res['games']
-            print(f"\n=== 商城遊戲列表 ({len(games)}) ===")
-            print(f"{'名稱':<20} {'作者':<20} {'版本':<10} {'評分'}")
-            print("-" * 60)
-            for g in games:
-                print(f"{g['game_id']:<20} {g['uploader']:<20} {g['version']:<10} {g.get('average_rating', 0)}")
+        choice = input(f"請輸入要下載的遊戲編號(1-{len(games)}) (或輸入 q 返回): ").strip()
+        if choice.lower() == 'q' or (choice.isdigit() and 1 <= int(choice) <= len(games)):
+               break
         else:
-            print("列表載入失敗。")
+            print("無效的輸入，請重新輸入。")
 
-        while True:
-            choice = input(f"請輸入要下載的遊戲編號(1-{len(games)}) (或輸入 q 返回): ").strip()
-            if choice.lower() == 'q' or (choice.isdigit() and 1 <= int(choice) <= len(games)):
-                break
-            else:
-                print("無效的輸入，請重新輸入。")
+    if choice.lower() == 'q':
+        return
+    game_id = games[int(choice)-1]['game_id']
 
-        if choice.lower() == 'q':
-            return
-        game_id = games[int(choice)-1]['game_id']
+    #檢查是否有更新
+    if not check_game_update(sock, game_id, mode='download'):
+        return
 
-        #檢查是否有更新
-        if not check_game_update(sock, game_id, mode='download'):
-            return
+    #下載成最新檔案
+    req = {
+        "cmd": "download_game",
+        "game_id": game_id
+    }
+    while True:
+        try:
+            send_json(sock, req)
 
-        #下載成最新檔案
-        req = {
-            "cmd": "download_game",
-            "game_id": game_id
-        }
-        send_json(sock, req)
+            res = recv_json(sock)
+            if res and res['status'] == 'ok':
+                file_size = res['file_size']
+                print(f"開始下載遊戲 {game_id}，檔案大小: {file_size} bytes")
 
-        res = recv_json(sock)
-        if res and res['status'] == 'ok':
-            file_size = res['file_size']
-            print(f"開始下載遊戲 {game_id}，檔案大小: {file_size} bytes")
-
-            try:
                 # 1. 告訴 server: "準備好了，請傳檔案"
                 # server 端應該在收到這個訊號後呼叫 send_file
                 send_json(sock, {"status": "ready_to_receive"})
@@ -405,21 +468,34 @@ def download_game(sock):
                     "status": "ok", 
                     "msg": f"Game '{game_id}' (v{version}) uploaded successfully!"
                 })
-
-            except Exception as e:
-                error_msg = str(e)
-                print(f"下載失敗: {error_msg}")
-                send_json(sock, {"status": "error", "msg": error_msg})
+                break
+            else:
+                print(f"下載失敗: {res.get('msg', 'Unknown error')}")
+                choice = input("是否重試? (y/n): ")
+                if choice.lower() != 'y':
+                    return
+                else:
+                    continue
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+            raise
+        except Exception as e:
+            error_msg = str(e)
+            print(f"下載失敗: {error_msg}")
+            send_json(sock, {"status": "error", "msg": error_msg})
+            choice = input("是否重試? (y/n): ")
+            if choice.lower() != 'y':
+                return
+            else:
+                continue
                 
-            finally:
-                # 8. 清理垃圾 (無論成功失敗都要做)
-                if os.path.exists(temp_zip):
-                    os.remove(temp_zip)
-                if os.path.exists(temp_extract_folder):
-                    shutil.rmtree(temp_extract_folder)
-            return
-        else:
-            print(f"下載失敗: {res.get('msg', 'Unknown error')}")
+        finally:
+            # 8. 清理垃圾 (無論成功失敗都要做)
+            if os.path.exists(temp_zip):
+                os.remove(temp_zip)
+            if os.path.exists(temp_extract_folder):
+                shutil.rmtree(temp_extract_folder)
+            
+        
 
 def create_room_flow(sock):
     """
@@ -436,6 +512,8 @@ def create_room_flow(sock):
         print(f"{'名稱':<20} {'作者':<20} {'版本':<10} {'評分'}")
         print("-" * 60)
         for g in games:
+            if g['status'] == 'unavailable':
+                continue
             print(f"{g['game_id']:<20} {g['uploader']:<20} {g['version']:<10} {g.get('average_rating', 0)}")
     else:
         print("列表載入失敗。")
@@ -639,6 +717,8 @@ def join_room_flow(sock):
         print(f"{'名稱':<20} {'作者':<20} {'版本':<10} {'評分'}")
         print("-" * 60)
         for g in games:
+            if g['status'] == 'unavailable':
+                continue
             print(f"{g['game_id']:<20} {g['uploader']:<20} {g['version']:<10} {g.get('average_rating', 0)}")
     else:
         print("列表載入失敗。")
@@ -789,7 +869,7 @@ def join_room_flow(sock):
     if res and res['status'] == 'ok':
         print(f"房間加入成功！房間 ID: {room_id}")
     else:
-        print(f"房間建立失敗: {res.get('msg', 'Unknown error')}")
+        print(f"房間加入失敗: {res.get('msg', 'Unknown error')}")
         return
     print("等待其他玩家加入房間...")
     # === 進入房間模式 ===
@@ -872,7 +952,7 @@ def review_game(sock):
     if choice.lower() == 'q':
         return
     game_id = games[int(choice)-1]['game_id']
-    
+
     while True:
         rating = input("請給予遊戲評分 (1-5): ").strip()
         if rating.isdigit() and 1 <= int(rating) <= 5:
@@ -935,73 +1015,76 @@ def review_game(sock):
                 continue
 
 def main():
-    
-    # 1. 建立連線
+    sock = None
     try:
+        # 1. 建立連線
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((SERVER_IP, LOBBY_PORT))
         print(f"[System] 已連線至 Player Server ({SERVER_IP}:{LOBBY_PORT})")
-    except Exception as e:
-        print(f"[Error] 無法連線至 Server: {e}")
-        return
 
-    # 2. 先登入才能進主選單
-    while True:
-        print("\n=== 玩家入口 ===")
-        print("1. 登入 (Login)")
-        print("2. 註冊 (Register)")
-        print("3. 離開 (Exit)")
-        
-        choice = input("請選擇功能 (1-3): ").strip()
-        
-        if choice == '1':
-            current_user = login(sock)
-            if current_user:
-                break
-        elif choice == '2':
-            register(sock)
-        elif choice == '3':
-            print("Bye!")
+        # 2. 先登入才能進主選單
+        while True:
+            print("\n=== 玩家入口 ===")
+            print("1. 登入 (Login)")
+            print("2. 註冊 (Register)")
+            print("3. 離開 (Exit)")
+            choice = input("請選擇功能 (1-3): ").strip()
+            if choice == '1':
+                current_user = login(sock)
+                if current_user:
+                    break
+            elif choice == '2':
+                register(sock)
+            elif choice == '3':
+                print("Bye!")
+                sock.close()
+                return
+            else:
+                print("無效的輸入，請重新選擇。")
+                print("請選擇功能: ", end='', flush=True)
+
+        if not current_user:
+            print("登入取消，程式結束。")
             sock.close()
             return
-        else:
-            print("無效的輸入，請重新選擇。")
-            print("請選擇功能: ", end='', flush=True)
 
-    if not current_user:
-        print("登入取消，程式結束。")
-        sock.close()
-        return
+        # 3. 主選單迴圈
+        while True:
+            print("\n" + "="*10 + " Player Menu " + "="*10)
+            print("1. 進入商城 (Enter Marketplace)")
+            print("2. 下載遊戲 (Download Games)")
+            print("3. 建立房間 (Create Room)")
+            print("4. 加入房間 (Join Room)")
+            print("5. 評論遊戲 (Review Games)")
+            print("6. 登出/離開 (Exit)")
+            choice = input("請選擇功能 (1-6): ").strip()
 
-    # 3. 主選單迴圈
-    while True:
-        print("\n" + "="*10 + " Player Menu " + "="*10)
-        print("1. 進入商城 (Enter Marketplace)")
-        print("2. 下載遊戲 (Download Games)")
-        print("3. 建立房間 (Create Room)")
-        print("4. 加入房間 (Join Room)")
-        print("5. 評論遊戲 (Review Games)")
-        print("6. 登出/離開 (Exit)")
-        
-        choice = input("請選擇功能 (1-6): ").strip()
+            if choice == '1':
+                market_menu(sock)
+            elif choice == '2':
+                download_game(sock)
+            elif choice == '3':
+                create_room_flow(sock)
+            elif choice == '4':
+                join_room_flow(sock)
+            elif choice == '5':
+                review_game(sock)
+            elif choice == '6':
+                print("Bye!")
+                break
+            else:
+                print("無效的輸入，請重新選擇。")
 
-        if choice == '1':
-            market_menu(sock)
-        elif choice == '2':
-            download_game(sock)
-        elif choice == '3':
-            create_room_flow(sock)
-        elif choice == '4':
-            join_room_flow(sock)
-        elif choice == '5':
-            review_game(sock)
-        elif choice == '6':
-            print("Bye!")
-            break
-        else:
-            print("無效的輸入，請重新選擇。")
-
-    sock.close()
+    except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+        print(f"\n[Error] 與伺服器連線中斷 ({e})，程式即將關閉。")
+    except Exception as e:
+        print(f"\n[Error] 發生未預期的錯誤: {e}\n程式即將關閉。")
+    finally:
+        if sock:
+            try:
+                sock.close()
+            except:
+                pass
 
 if __name__ == "__main__":
     main()

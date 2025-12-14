@@ -4,7 +4,7 @@ import os
 from config import LOBBY_PORT, DEV_PORT
 from services.lobby_service import handle_lobby_client
 from services.dev_service import handle_dev_client
-from db_storage.database import init_db
+from db_storage.database import init_db, player_exit
 def start_service(port, handler_func, service_name):
     """
     通用的 Server 啟動函式
@@ -29,20 +29,24 @@ if __name__ == "__main__":
     if not os.path.exists("games"):
         os.makedirs("games")
     # 啟動 Lobby Server (玩家用)
-    t_lobby = threading.Thread(
-        target=start_service, 
-        args=(LOBBY_PORT, handle_lobby_client, "Lobby Server")
-    )
-    
-    # 啟動 Developer Server (開發者用)
-    t_dev = threading.Thread(
-        target=start_service, 
-        args=(DEV_PORT, handle_dev_client, "Developer Server")
-    )
+    try:
+        t_lobby = threading.Thread(
+            target=start_service, 
+            args=(LOBBY_PORT, handle_lobby_client, "Lobby Server")
+        )
+        
+        # 啟動 Developer Server (開發者用)
+        t_dev = threading.Thread(
+            target=start_service, 
+            args=(DEV_PORT, handle_dev_client, "Developer Server")
+        )
 
-    t_lobby.start()
-    t_dev.start()
+        t_lobby.start()
+        t_dev.start()
 
-    # 主執行緒等待 (防止程式直接結束)
-    t_lobby.join()
-    t_dev.join()
+        # 主執行緒等待 (防止程式直接結束)
+        t_lobby.join()
+        t_dev.join()
+    except KeyboardInterrupt:
+        print("\n[System] Shutting down servers...")
+

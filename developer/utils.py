@@ -203,15 +203,19 @@ def manifest_initial_setting(folder_path, username="developer"):
             "server_exe": "server/your_server_executable.exe",
             "client_exe": "client/your_client_executable.exe",
             "description": "",
+            "type": "",
             "author": "遊戲開發者名稱",
             "client_args": "",
             "server_args": ""
         }
 
+        template['author'] = username
+
         game_id = input("請輸入遊戲 ID (英文、數字、底線): ").strip()
         if game_id:
-            template['game_id'] = game_id
+            template['game_id'] = f"{game_id}-{username}"
         else:
+            template['game_id'] = f"your_game_id-{username}"
             print("[Warning] 未輸入遊戲 ID，將使用預設值(your_game_id)。")
         
         min_players = input("請輸入最少玩家數 (預設 1): ").strip()
@@ -272,7 +276,13 @@ def manifest_initial_setting(folder_path, username="developer"):
             template['description'] = ""
             print("[Info] 偵測未輸入描述，使用預設空值。")
 
-        template['author'] = username
+        game_type = input("請輸入遊戲類型 (例如: CLI, GUI等): ").strip()
+        if game_type:
+            template['type'] = game_type
+        else:
+            template['type'] = ""
+            print("[Info] 偵測未輸入遊戲類型，使用預設空值。")
+        
         
         server_args = input("請輸入遊戲 Server 執行檔的啟動參數列表 (ex:--args args): ").strip()
         if server_args:
@@ -415,6 +425,13 @@ def manifest_update_setting(folder_path, username="developer"):
         else:
             template['update_patch'] = ""
             print("[Info] 偵測未輸入描述，使用預設空值。")
+
+        game_type = input("請輸入更新後遊戲類型 (例如: CLI, GUI等): ").strip()
+        if game_type:
+            template['type'] = game_type
+        else:
+            template['type'] = ""
+            print("[Info] 偵測未輸入遊戲類型，使用預設空值。")
 
         template['author'] = username
 

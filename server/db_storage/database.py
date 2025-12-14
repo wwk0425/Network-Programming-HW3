@@ -22,7 +22,16 @@ def init_db():
     if not os.path.exists(USER_DB_FILE):
         with open(USER_DB_FILE, 'w', encoding='utf-8') as f:
             json.dump({"developers": {}, "players": {}}, f)
-            
+    else:
+        #讓玩家都離線
+        with open(USER_DB_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        for role in ['developers', 'players']:
+            for username in data[role]:
+                data[role][username]['status'] = 'offline'
+        with open(USER_DB_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
     if not os.path.exists(GAME_DB_FILE):
         with open(GAME_DB_FILE, 'w', encoding='utf-8') as f:
             json.dump({}, f) # 一開始是空的字典
@@ -66,8 +75,9 @@ def add_or_update_game(game_id, manifest_data, relative_path, uploader_name):
             "server_exe": manifest_data.get("server_exe"), # 重要：啟動時需要
             "client_exe": manifest_data.get("client_exe"), # 重要：下載時需要
             "update_patch": manifest_data.get("update_patch", ""),
-
+            "type": manifest_data.get("type", ""),
             # 系統維護欄位
+            "status": "available", # 可用/不可用
             "uploader": uploader_name,
             "path": relative_path, # 存例如: games/snake/1.0
             "upload_time": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -399,3 +409,21 @@ def get_player_game_records(player_name):
         
         player_data = data['players'][player_name]
         return player_data.get('game_records', [])
+
+def change_game_status(game_id, new_status):
+    """
+    更改遊戲的狀態 (例如: 可用/不可用)
+    """
+    with game_lock:
+        with open(GAME_DB_FILE, 'r', encoding='utf-8') as f:
+            games = json.load(f)
+        
+        if game_id not in games:
+            return False
+        
+        games[game_id]['status'] = new_status
+        
+        with open(GAME_DB_FILE, 'w', encoding='utf-8') as f:
+            json.dump(games, f, indent=4, ensure_ascii=False)
+        
+        return True

@@ -99,12 +99,14 @@ def upload_game_workflow(sock, username):
     selected_game = os.listdir(games_path)[int(choice)-1]
 
     #如果遊戲已經上傳過 提示去更新他
+    #因為上傳檔案變成 game_id-uploadername 所以這邊要加上-uploadername
+    selected_game_with_uploader = f"{selected_game}-{username}"
     send_json(sock, {"cmd": "my_games"})
     res = recv_json(sock)
     if res and res['status'] == 'ok':
         my_games = res['games']
         for g in my_games:
-            if g['game_id'] == selected_game:
+            if g['game_id'] == selected_game_with_uploader:
                 print(f"[Info] 您已經上傳過此遊戲 '{selected_game}'，請使用更新遊戲內容功能來更新它。")
                 return
     else:
@@ -205,6 +207,9 @@ def update_game_workflow(sock, username):
 
     #檢查要更新的遊戲有沒有目錄
     selected_game = my_games[int(choice)-1].get('game_id')
+    #因為上傳檔案變成 game_id-uploadername 所以這邊要去掉-uploadername
+    if '-' in selected_game:
+        selected_game = selected_game.rsplit('-', 1)[0]
     if selected_game not in os.listdir(games_path):
         print(f"[Info] 'games' 目錄中沒有找到遊戲 '{selected_game}' 的資料夾，請確認已放入要更新的遊戲資料夾。")
         return
@@ -273,7 +278,7 @@ def list_my_games(sock):
     if res and res['status'] == 'ok':
         games = res['games']
         print(f"\n=== 我的遊戲列表 ({len(games)}) ===")
-        print(f"{'名稱':<20} {'版本':<10} {'評分'}")
+        print(f"{'名稱-作者':<20} {'版本':<10} {'評分'}")
         print("-" * 60)
         for g in games:
             print(f"{g['game_id']:<20} {g['version']:<10} {g.get('average_rating', 0)}")
@@ -325,7 +330,7 @@ def delete_game_workflow(sock, username):
                 print(f"[Info] 遊戲 '{selected_game}' 已成功下架。")
                 break
             else:
-                print(f"[Error] 無法下架遊戲: {res.get('msg', 'Unknown error')}，請重新嘗試下架")
+                print(f"[Error] 無法下架遊戲: {res.get('msg', 'Unknown error')}，請稍後重新嘗試下架")
                 choice = input("是否重試? (y/n): ")
                 if choice.lower() != 'y':
                     return

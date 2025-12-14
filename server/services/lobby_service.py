@@ -11,6 +11,7 @@ from db_storage.database import verify_login, register_user, get_all_games, crea
 from config import LOBBY_PORT
 # --- 全域變數 ---
 online_users = {} # username -> conn
+room_processes = {} # room_id -> subprocess.Popen
 room_id_counter = 1
 online_users_lock = threading.Lock()
 
@@ -96,6 +97,11 @@ def handle_lobby_client(conn, addr):
                 remove_player_ready(room_id)
                 update_room_status(room_id, "Waiting", None)
                 broadcast_to_room(room_id, {"cmd": "game_ended", "result": result})
+                proc = room_processes.get(room_id)
+                if proc:
+                    proc.terminate()
+                if room_id in room_processes:
+                    del room_processes[room_id]
             # === Middleware: 以下指令都需要登入 ===
             elif not current_user:
                 send_json(conn, {"status": "error", "msg": "Please login first"})
@@ -145,9 +151,12 @@ def handle_lobby_client(conn, addr):
                 all_games = get_all_games()
                 
                 if game_id not in all_games:
-                    send_json(conn, {"status": "error", "msg": "Game ID invalid"})
+                    send_json(conn, {"status": "error", "msg": "遊戲不存在或者剛剛被下架了"})
                     continue
-                
+                #檢查遊戲是否為不可用狀態
+                if all_games[game_id]['status'] == "unavailable":
+                    send_json(conn, {"status": "error", "msg": "遊戲目前不可用，請聯絡開發者"})
+                    continue
                 max_p = all_games[game_id].get('max_players', 4)
                 rid = room_id_counter
 
@@ -161,6 +170,19 @@ def handle_lobby_client(conn, addr):
             # === 6. 加入房間 (Join Room) ===
             elif cmd == 'join_room':
                 target_rid = req.get('room_id')
+
+                # 判斷是否可加入
+                room_info = get_room_info(target_rid)
+                if not room_info:
+                    send_json(conn, {"status": "error", "msg": "Room not found"})
+                    continue
+                games = get_all_games()
+                if room_info['game_id'] not in games:
+                    send_json(conn, {"status": "error", "msg": "遊戲不存在或者剛剛被下架了"})
+                    continue
+                if games[room_info['game_id']]['status'] == "unavailable":
+                    send_json(conn, {"status": "error", "msg": "遊戲目前不可用，請聯絡開發者"})
+                    continue
 
                 success, msg = join_room_in_db(target_rid, current_user)
                 if success:
@@ -190,6 +212,21 @@ def handle_lobby_client(conn, addr):
                     continue
                 
                 if room_info['host'] == current_user:
+                    #先檢查遊戲被下架了沒
+                    all_games = get_all_games()
+                    if room_info['game_id'] not in all_games:
+                        broadcast_to_room(current_room_id, {"cmd": "start_game_error", "status": "error", "msg": "遊戲不存在或者剛剛被下架了"})
+                        remove_player_ready(current_room_id)
+                        continue
+                    #檢查遊戲是否為不可用狀態
+                    if all_games[room_info['game_id']]['status'] == "unavailable":
+                        broadcast_to_room(current_room_id, {"cmd": "start_game_error", "status": "error", "msg": "遊戲目前不可用，請聯絡開發者"})
+                        remove_player_ready(current_room_id)
+                        continue
+                    #確認有沒有滿足最少玩家數
+                    if len(room_info['players']) < all_games[room_info['game_id']].get('min_players', 2):
+                        send_json(conn, {"cmd": "start_game_error", "status": "error", "msg": "Not enough players to start the game"})
+                        continue
                     #確認除了自己 大家都準備好就開始
                     all_ready = all(player in room_info.get('ready_players', []) for player in room_info['players'] if player != current_user)
                     if not all_ready:
@@ -210,8 +247,8 @@ def handle_lobby_client(conn, addr):
                 player_num = len(room_info['players'])
                 try:
                     cmd_list = ["python", full_exe_path, "--port", str(game_port), "--lobby_ip", "127.0.0.1", "--lobby_port", str(LOBBY_PORT), "--room_id", str(current_room_id), "--players", str(player_num)] + all_games[game_id].get('server_args', "").split() if full_exe_path.endswith('.py') else [full_exe_path, "--port", str(game_port), "--lobby_ip", "127.0.0.1", "--lobby_port", str(LOBBY_PORT), "--room_id", str(current_room_id), "--players", str(player_num)] + all_games[game_id].get('server_args', "").split()
-                    subprocess.Popen(cmd_list, cwd=os.path.abspath(game_path))
-                    
+                    proc = subprocess.Popen(cmd_list, cwd=os.path.abspath(game_path))
+                    room_processes[current_room_id] = proc
                     # 3. 更新 DB 狀態
                     update_room_status(current_room_id, "Playing", game_port)
                     
@@ -222,13 +259,34 @@ def handle_lobby_client(conn, addr):
                         "port": game_port,
                         "client_args": client_args,
                         "game_path": game_path,
-                        "client_exe": client_exe
+                        "client_exe": client_exe,
+                        "room_id": current_room_id
                     })
-                    #send_json(conn, {"status": "ok"})
                     
                 except Exception as e:
-                    send_json(conn, {"status": "error", "msg": str(e)})
-            
+                    if current_room_id in room_processes:
+                        proc = room_processes[current_room_id]
+                        if proc:
+                            proc.terminate()
+                        if current_room_id in room_processes:
+                            del room_processes[current_room_id]
+                    broadcast_to_room(current_room_id, {"cmd": "game_start_failed", "msg": "有玩家啟動遊戲失敗，遊戲已中止"})
+                    remove_player_ready(current_room_id)
+                    update_room_status(current_room_id, "Waiting", None)
+
+            elif cmd == 'client_start_failed':
+                # 玩家端無法啟動遊戲的回報
+                room_id = req.get('room_id')
+                proc = room_processes.get(room_id)
+                if proc:
+                    proc.terminate()
+                    print(f"[System] 已關閉房間 {room_id} 的遊戲進程")
+                if room_id in room_processes:
+                    del room_processes[room_id] 
+                remove_player_ready(room_id)
+                update_room_status(room_id, "Waiting", None)
+                broadcast_to_room(room_id, {"cmd": "game_start_failed", "msg": "有玩家啟動遊戲失敗，遊戲已中止"})
+
             elif cmd == 'leave_room':
                 if not current_room_id:
                     send_json(conn, {"status": "error", "msg": "Not in a room"})
@@ -261,11 +319,11 @@ def handle_lobby_client(conn, addr):
 
                 all_games = get_all_games()
                 if game_id not in all_games:
-                    send_json(conn, {"status": "error", "msg": "Game not found"})
+                    send_json(conn, {"status": "error", "msg": "遊戲不存在或者剛剛被下架了"})
                     continue
 
                 latest_version = all_games[game_id]['version']
-                if compare_versions_player(current_version, latest_version) == current_version:
+                if latest_version == current_version:
                     send_json(conn, {"status": "ok", "up_to_date": True, "msg": "You have the latest version."})
                 else:
                     send_json(conn, {"status": "ok", "up_to_date": False, "latest_version": latest_version, "msg": "A new version is available."})
@@ -276,7 +334,7 @@ def handle_lobby_client(conn, addr):
                 target_game_id = req.get('game_id')
                 all_games = get_all_games()
                 if target_game_id not in all_games:
-                    send_json(conn, {"status": "error", "msg": "Game not found"})
+                    send_json(conn, {"status": "error", "msg": "遊戲不存在或者剛剛被下架了"})
                     continue
                 
                 game_info = all_games[target_game_id]

@@ -6,7 +6,7 @@ import threading
 
 # 引用我們之前定義好的工具
 from utils import recv_json, send_json, recv_file
-from db_storage.database import register_user, verify_login, add_or_update_game, get_all_games, remove_game, player_exit
+from db_storage.database import register_user, verify_login, add_or_update_game, get_all_games, remove_game, player_exit, get_all_rooms,change_game_status
 
 # 設定遊戲儲存根目錄
 GAMES_ROOT_DIR = "games"
@@ -138,11 +138,11 @@ def handle_upload_process(conn, uploader_name):
         
         if not game_id or not version:
             raise Exception("Invalid manifest: missing game_id or version")
-        game_path = f"{game_id}-{uploader_name}"
+        
 
         # 5. 部署到最終目錄: games/{game_id}/{version}/
         # 使用 os.path.join 確保跨平台相容
-        final_dir = os.path.join(GAMES_ROOT_DIR, game_path, version)
+        final_dir = os.path.join(GAMES_ROOT_DIR, game_id, version)
 
         # 如果該版本已存在，先刪除舊的 (Overwrite)
         if os.path.exists(final_dir):
@@ -187,8 +187,12 @@ def delete_game_process(conn, uploader_name, game_id):
     處理遊戲下架的邏輯
     """
     #先判斷有沒有房間
-    # if True:  # TODO: 檢查是否有玩家正在遊玩該遊戲
-    #     pass
+    rooms = get_all_rooms()
+    for room in rooms.values():
+        if room['game_id'] == game_id:
+            send_json(conn, {"status": "error", "msg": "目前無法將遊戲下架，因為有玩家正在遊玩此遊戲的房間中，已將遊戲狀態調整為不可用" })
+            change_game_status(game_id, "unavailable")
+            return
     #若沒有就直接下架遊戲
     try:
         # 呼叫 database.py 的刪除函式
