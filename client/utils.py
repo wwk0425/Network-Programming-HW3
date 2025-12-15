@@ -1,7 +1,7 @@
 import json
 import os
 import struct
-
+import math
 def send_json(sock, data_dict):
     """
     將 Python Dict 轉為 JSON -> 加上長度 Header -> 發送
@@ -100,3 +100,33 @@ def recv_file(sock, save_dir):
 
     print(f"[Download] Saved to {save_path}")
     return save_path
+
+def paged_cli_menu(options, page_size=3):
+    page = 0
+    total_pages = math.ceil(len(options) / page_size)
+
+    while True:
+        start = page * page_size
+        end = start + page_size
+        print("\n" + "="*10 + " Player Menu " + "="*10)
+        for idx, opt in enumerate(options[start:end], start=1):
+            print(f"{idx}. {opt}")
+        if total_pages > 1:
+            if page > 0:
+                print("p. 上一頁 (Prev Page)")
+            if page < total_pages - 1:
+                print("n. 下一頁 (Next Page)")
+        choice = input("請選擇功能: ").strip().lower()
+        if choice == 'n' and page < total_pages - 1:
+            page += 1
+        elif choice == 'p' and page > 0:
+            page -= 1
+        elif choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < min(page_size, len(options) - start):
+                print(start + idx + 1)
+                return start + idx + 1  # 回傳選項編號（1-based）
+            else:
+                print("無效的輸入，請重新選擇。")
+        else:
+            print("無效的輸入，請重新選擇。")

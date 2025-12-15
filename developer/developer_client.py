@@ -12,7 +12,7 @@ from config import DEV_PORT
 from template.create_game_template import create_game_template
 
 # --- 設定 ---
-SERVER_IP = '127.0.0.1'
+SERVER_IP = '140.113.17.11'
 # DEV_PORT = 9001  # 開發者專用 Port
 
 # --- 功能函式 ---

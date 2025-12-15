@@ -491,6 +491,6 @@ def paged_dev_menu(options, page_size=3):
                 print(start + idx + 1)
                 return start + idx + 1  # 回傳選項編號（1-based）
             else:
-                print("無效的輸入，請重新選擇yr。")
+                print("無效的輸入，請重新選擇。")
         else:
             print("無效的輸入，請重新選擇。")

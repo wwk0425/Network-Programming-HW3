@@ -10,12 +10,12 @@ import subprocess
 import argparse
 # 假設 network.py 放在同層級的 utils 資料夾
 # 如果放在同層，直接 from network import ...
-from utils import send_json, recv_json, recv_file
+from utils import send_json, recv_json, recv_file, paged_cli_menu
 from config import LOBBY_PORT
 
 
 # --- 設定 ---
-SERVER_IP = '127.0.0.1'
+SERVER_IP = '140.113.17.11'
 # DEV_PORT = 9001  # 開發者專用 Port
 GAMES_ROOT_DIR = "games"  # 下載後遊戲存放根目錄
 in_game = threading.Event()
@@ -95,13 +95,10 @@ def room_listener(sock):
                 # 伺服器傳來的 game_path 只到 games/game_id/version，要補上本地 username 目錄
                 server_game_path = msg.get('game_path', '.')
                 # 取出 game_id, version
-                parts = server_game_path.strip(os.sep).split(os.sep)
-                if len(parts) >= 2:
-                    game_id = parts[-2]
-                    version = parts[-1]
-                    game_path = os.path.join(GAMES_ROOT_DIR, game_id, version)
-                else:
-                    game_path = server_game_path
+                parts = server_game_path.replace("/", os.sep).replace("\\", os.sep).split(os.sep)
+                game_id = parts[1]
+                version = parts[2]
+                game_path = os.path.join(GAMES_ROOT_DIR, game_id, version)
                 client_exe = msg.get('client_exe', '')
                 current_room_id = msg.get('room_id', '')
                 full_exe_path = os.path.abspath(os.path.join(game_path, client_exe))
@@ -1100,15 +1097,16 @@ def main():
             return
 
         # 3. 主選單迴圈
+        options = [
+            "進入商城 (Enter Marketplace)",
+            "下載遊戲 (Download Games)",
+            "建立房間 (Create Room)",
+            "加入房間 (Join Room)",
+            "評論遊戲 (Review Games)",
+            "登出/離開 (Exit)"
+        ]
         while True:
-            print("\n" + "="*10 + " Player Menu " + "="*10)
-            print("1. 進入商城 (Enter Marketplace)")
-            print("2. 下載遊戲 (Download Games)")
-            print("3. 建立房間 (Create Room)")
-            print("4. 加入房間 (Join Room)")
-            print("5. 評論遊戲 (Review Games)")
-            print("6. 登出/離開 (Exit)")
-            choice = input("請選擇功能 (1-6): ").strip()
+            choice = str(paged_cli_menu(options, page_size=3))
 
             if choice == '1':
                 market_menu(sock)

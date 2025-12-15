@@ -246,7 +246,7 @@ def handle_lobby_client(conn, addr):
                 full_exe_path = os.path.abspath(os.path.join(game_path, server_exe))
                 player_num = len(room_info['players'])
                 try:
-                    cmd_list = ["python", full_exe_path, "--port", str(game_port), "--lobby_ip", "127.0.0.1", "--lobby_port", str(LOBBY_PORT), "--room_id", str(current_room_id), "--players", str(player_num)] + all_games[game_id].get('server_args', "").split() if full_exe_path.endswith('.py') else [full_exe_path, "--port", str(game_port), "--lobby_ip", "127.0.0.1", "--lobby_port", str(LOBBY_PORT), "--room_id", str(current_room_id), "--players", str(player_num)] + all_games[game_id].get('server_args', "").split()
+                    cmd_list = ["python", full_exe_path, "--port", str(game_port), "--lobby_ip", "140.113.17.11", "--lobby_port", str(LOBBY_PORT), "--room_id", str(current_room_id), "--players", str(player_num)] + all_games[game_id].get('server_args', "").split() if full_exe_path.endswith('.py') else [full_exe_path, "--port", str(game_port), "--lobby_ip", "127.0.0.1", "--lobby_port", str(LOBBY_PORT), "--room_id", str(current_room_id), "--players", str(player_num)] + all_games[game_id].get('server_args', "").split()
                     proc = subprocess.Popen(cmd_list, cwd=os.path.abspath(game_path))
                     room_processes[current_room_id] = proc
                     # 3. 更新 DB 狀態
@@ -255,7 +255,7 @@ def handle_lobby_client(conn, addr):
                     # 4. 廣播
                     broadcast_to_room(current_room_id, {
                         "cmd": "game_start", 
-                        "ip": "127.0.0.1", 
+                        "ip": "140.113.17.11", 
                         "port": game_port,
                         "client_args": client_args,
                         "game_path": game_path,
