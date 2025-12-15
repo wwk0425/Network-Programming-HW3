@@ -205,14 +205,41 @@ def update_game_workflow(sock, username):
         else:
             print("[Error] 輸入超出範圍，請重新操作。")
 
-    #檢查要更新的遊戲有沒有目錄
-    selected_game = my_games[int(choice)-1].get('game_id')
-    #因為上傳檔案變成 game_id-uploadername 所以這邊要去掉-uploadername
-    if '-' in selected_game:
-        selected_game = selected_game.rsplit('-', 1)[0]
-    if selected_game not in os.listdir(games_path):
-        print(f"[Info] 'games' 目錄中沒有找到遊戲 '{selected_game}' 的資料夾，請確認已放入要更新的遊戲資料夾。")
+    # #檢查要更新的遊戲有沒有目錄
+    # selected_game = my_games[int(choice)-1].get('game_id')
+    # #因為上傳檔案變成 game_id-uploadername 所以這邊要去掉-uploadername
+    # if '-' in selected_game:
+    #     selected_game = selected_game.rsplit('-', 1)[0]
+    # if selected_game not in os.listdir(games_path):
+    #     print(f"[Info] 'games' 目錄中沒有找到遊戲 '{selected_game}' 的資料夾，請確認已放入要更新的遊戲資料夾。")
+    #     return
+    # game_folder_path = os.path.join(games_path, selected_game)
+
+    if "games" not in os.listdir('.'):
+        print("[Info] 請先使用創建上傳目錄指令創建 'games' 目錄，並創建好要上傳的遊戲的目錄。")
         return
+    
+    games_path = os.path.join('.', 'games')
+
+    if os.listdir(games_path) == []:
+        print("[Info] 'games' 目錄目前是空的，請先放入要上傳的遊戲資料夾。")
+        return
+    
+    print(f"[Info] 目前可上傳的遊戲專案資料夾有:")
+    dir_length = len(os.listdir(games_path))
+    for idx, game in enumerate(os.listdir(games_path)):
+        print(f"  {idx+1}. {game}")
+
+    choice = input(f"請輸入您想上傳的遊戲:(1~{dir_length})").strip()
+    if not (choice.isdigit() and 1 <= int(choice) <= dir_length):
+        print("[Error] 輸入超出範圍，請重新操作。")
+        return
+    
+    selected_game = os.listdir(games_path)[int(choice)-1]
+
+    #如果遊戲已經上傳過 提示去更新他
+    #因為上傳檔案變成 game_id-uploadername 所以這邊要加上-uploadername
+
     game_folder_path = os.path.join(games_path, selected_game)
 
     # 1. 本地檢查與壓縮
