@@ -211,7 +211,7 @@ def manifest_initial_setting(folder_path, username="developer"):
 
         template['author'] = username
 
-        game_id = input("請輸入遊戲 ID (英文、數字、底線): ").strip()
+        game_id = input("請輸入遊戲 ID (跟資料夾名稱相同): ").strip()
         if game_id:
             template['game_id'] = f"{game_id}-{username}"
         else:
