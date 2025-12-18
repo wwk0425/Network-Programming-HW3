@@ -7,14 +7,14 @@ REM ==========================================
 echo [System] Starting Game Platform Demo...
 echo [System] Please do not close this window until you finish the demo.
 
-REM 2. 啟動 Server
-REM start "視窗標題" cmd /k "指令"
-REM /k 表示執行完不關閉視窗，方便看 Log
-echo [1/3] Launching Server...
-start "Remote Server" cmd /k ssh -t -l wkwang linux1.cs.nycu.edu.tw "cd ~/server && python -u server.py"
-pause
-REM 等待 2 秒確保 Server 跑起來
-timeout /t 2 /nobreak >nul
+@REM REM 2. 啟動 Server
+@REM REM start "視窗標題" cmd /k "指令"
+@REM REM /k 表示執行完不關閉視窗，方便看 Log
+@REM echo [1/3] Launching Server...
+@REM start "Remote Server" cmd /k ssh -t -l wkwang linux1.cs.nycu.edu.tw "cd ~/server && python -u server.py"
+@REM pause
+@REM REM 等待 2 秒確保 Server 跑起來
+@REM timeout /t 2 /nobreak >nul
 
 REM 3. 啟動 Developer Client
 echo [2/3] Launching Developer Client...
